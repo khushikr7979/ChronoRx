@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Optional PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: chronorx_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chronorx_user
+      POSTGRES_PASSWORD: chronorx_secure_password
+      POSTGRES_DB: chronorx_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # FastAPI Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chronorx_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://chronorx_user:chronorx_secure_password@db:5432/chronorx_db
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - AI_FALLBACK_MODE=true
+      - OCR_FALLBACK_MODE=true
+    volumes:
+      - ./uploads:/app/uploads
+      - ./generated_reports:/app/generated_reports
+    depends_on:
+      - db
+
+  # React Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: chronorx_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" style="background:#ffffff; font-family:system-ui, -apple-system, sans-serif;">
+  <!-- Border -->
+  <rect x="20" y="20" width="760" height="960" fill="none" stroke="#B91C1C" stroke-width="3" rx="8" />
+
+  <!-- Header Banner -->
+  <rect x="25" y="25" width="750" height="110" fill="#FEF2F2" />
+  <text x="45" y="65" font-size="22" font-weight="bold" fill="#B91C1C">ANTICOAGULATION &amp; VASCULAR CLINICAL SERVICE</text>
+  <text x="45" y="92" font-size="13" fill="#334155">Attending: Dr. Alexander Vance, M.D. | Dept. of Thrombosis Management</text>
+  <text x="45" y="115" font-size="11" fill="#64748B">St. Jude Health Pavilion, Suite 210 | Phone: (555) 018-4920</text>
+
+  <!-- Demographics Panel -->
+  <rect x="40" y="150" width="720" height="75" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1" rx="4" />
+  <text x="55" y="175" font-size="13" font-weight="bold" fill="#0F172A">Patient ID: DEMO-1002   |   Age: 46 yrs   |   Gender: Female   |   Weight: 65.0 kg   |   Height: 162 cm</text>
+  <text x="55" y="200" font-size="12" fill="#B91C1C" font-weight="bold">Known Allergies: Sulfa Drugs (severe rash)   |   Clinical Dx: Post-PCI Coronary Stenting, DVT Prophylaxis</text>
+
+  <!-- Rx Symbol -->
+  <text x="50" y="270" font-size="34" font-weight="bold" font-family="serif" fill="#B91C1C">Rx</text>
+  <line x1="40" y1="285" x2="760" y2="285" stroke="#94A3B8" stroke-width="1.5" />
+
+  <!-- Prescribed Items -->
+  <g font-size="14" fill="#1E293B" font-family="Courier, monospace">
+    <text x="60" y="325"><tspan font-weight="bold">1. Warfarin 5mg Tablet</tspan> — 1 tab PO once daily at 6:00 PM x 30 days (titrate per INR)</text>
+    <text x="60" y="375"><tspan font-weight="bold">2. Clopidogrel 75mg Tablet</tspan> — 1 tab PO once daily in morning x 30 days</text>
+    <text x="60" y="425"><tspan font-weight="bold">3. Omeprazole 20mg Capsule</tspan> — 1 cap PO daily 30 minutes before breakfast x 30 days</text>
+    <text x="60" y="475"><tspan font-weight="bold">4. Amoxicillin 500mg Capsule</tspan> — 1 cap PO TID x 7 days [FLAG: Check Allergy History]</text>
+  </g>
+
+  <!-- Instructions -->
+  <line x1="40" y1="530" x2="760" y2="530" stroke="#CBD5E1" stroke-width="1" />
+  <text x="50" y="560" font-size="13" font-weight="bold" fill="#B91C1C">CRITICAL SURVEILLANCE &amp; CLINICAL NOTICES:</text>
+  <text x="50" y="585" font-size="12" fill="#475569">• WARFARIN + CLOPIDOGREL: Heightened risk of major systemic and GI hemorrhage.</text>
+  <text x="50" y="605" font-size="12" fill="#475569">• CLOPIDOGREL + OMEPRAZOLE: Omeprazole inhibits CYP2C19, decreasing clopidogrel efficacy.</text>
+  <text x="50" y="625" font-size="12" fill="#475569">• Maintain strictly consistent dietary Vitamin K intake while on Warfarin.</text>
+
+  <!-- Signature -->
+  <line x1="500" y1="880" x2="740" y2="880" stroke="#0F172A" stroke-width="1.5" />
+  <text x="500" y="905" font-size="13" font-weight="bold" fill="#0F172A">Dr. Alexander Vance, M.D.</text>
+  <text x="500" y="925" font-size="11" fill="#64748B">Date: 2025-05-22 | DEA: AV4910283</text>
+
+  <!-- Disclaimer Footer -->
+  <text x="45" y="960" font-size="9" fill="#94A3B8" font-style="italic">ChronoRx Tech Prototype Demo Asset — AI-Assisted Clinical Decision Support — Verified Clinician Authorization Required.</text>
+</svg>

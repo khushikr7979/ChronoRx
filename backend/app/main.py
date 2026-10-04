@@ -1,0 +1,196 @@
+import os
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from app.config import settings
+from app.database import engine, Base, SessionLocal
+from app.api import api_router
+from app.models.models import User, Patient, ScanRecord
+from app.security.auth_handler import get_password_hash
+from app.services.dose_service import calculate_dubois_bsa, calculate_bmi
+
+# Initialize database schema
+Base.metadata.create_all(bind=engine)
+
+def migrate_sqlite_columns():
+    try:
+        import sqlite3
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db_path = settings.DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(prescription_reviews)")
+                cols = [r[1] for r in cursor.fetchall()]
+                if "status" not in cols:
+                    cursor.execute("ALTER TABLE prescription_reviews ADD COLUMN status VARCHAR(30) DEFAULT 'ACTIVE'")
+                if "archived_at" not in cols:
+                    cursor.execute("ALTER TABLE prescription_reviews ADD COLUMN archived_at TIMESTAMP")
+                if "archived_by" not in cols:
+                    cursor.execute("ALTER TABLE prescription_reviews ADD COLUMN archived_by VARCHAR(50)")
+                cursor.execute("PRAGMA table_info(users)")
+                u_cols = [r[1] for r in cursor.fetchall()]
+                if "patient_id" not in u_cols:
+                    cursor.execute("ALTER TABLE users ADD COLUMN patient_id VARCHAR(50)")
+                conn.commit()
+                conn.close()
+    except Exception as e:
+        print(f"Migration notice: {e}")
+
+migrate_sqlite_columns()
+
+app = FastAPI(
+    title="ChronoRx Tech API",
+    description="AI-Assisted Clinical Decision Support System (CDSS) for Medication Verification, OCR, Interactions, Chronopharmacology Scheduling, and e-Prescriptions.",
+    version="1.0.0"
+)
+
+# CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Custom Medical Disclaimer Response Header (strictly ASCII for HTTP spec)
+@app.middleware("http")
+async def add_medical_safety_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Medical-Disclaimer"] = "AI-assisted reference information - verify with an authorized healthcare professional."
+    return response
+
+# Mount static file endpoints
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+os.makedirs(settings.GENERATED_REPORTS_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+app.mount("/reports", StaticFiles(directory=settings.GENERATED_REPORTS_DIR), name="reports")
+
+# Include API Router (both at root and /api for universal compatibility)
+app.include_router(api_router)
+app.include_router(api_router, prefix="/api")
+
+@app.on_event("startup")
+def seed_default_demo_data():
+    """
+    Initializes default demo users and clinical demo data if database is empty.
+    Provides immediate 1-click testability.
+    """
+    db = SessionLocal()
+    try:
+        # 1. Seed Default Users with System-Generated IDs (No generic 'doctor', 'reception', 'admin' usernames)
+        if db.query(User).count() == 0:
+            doctor_user = User(
+                user_id="DOC-1001",
+                username="DOC-1001",
+                email="sarah.jenkins@chronorx.tech",
+                hashed_password=get_password_hash("ClinicianPass2026!"),
+                full_name="Dr. Sarah Jenkins, M.D.",
+                role="doctor",
+                is_active=True
+            )
+            receptionist_user = User(
+                user_id="REC-1001",
+                username="REC-1001",
+                email="alex.rivera@chronorx.tech",
+                hashed_password=get_password_hash("ReceptionPass2026!"),
+                full_name="Alex Rivera",
+                role="receptionist",
+                is_active=True
+            )
+            admin_user = User(
+                user_id="ADM-1001",
+                username="ADM-1001",
+                email="david.vance@chronorx.tech",
+                hashed_password=get_password_hash("AdminSecure2026!"),
+                full_name="David Vance",
+                role="admin",
+                is_active=True
+            )
+            db.add_all([doctor_user, receptionist_user, admin_user])
+            db.commit()
+
+        # 2. Seed Default Demo Patients (Clearly labeled DEMO data only)
+        if db.query(Patient).count() == 0:
+            p1_bsa = calculate_dubois_bsa(82.0, 178.0)
+            p1_bmi = calculate_bmi(82.0, 178.0)
+            demo_patient_1 = Patient(
+                patient_id="DEMO-1001",
+                name="John Doe (Demo)",
+                phone="+1-555-0199",
+                age=58,
+                weight=82.0,
+                height=178.0,
+                gender="Male",
+                bsa=p1_bsa,
+                bmi=p1_bmi,
+                medical_history="Hypertension (8 yrs), Hyperlipidemia (4 yrs), Mild Osteoarthritis",
+                allergies="Penicillin (mild urticaria)",
+                existing_medications="Amlodipine 5mg Daily, Aspirin 81mg Daily",
+                created_by="REC-1001",
+                assigned_doctor_id="DOC-1001"
+            )
+
+            p2_bsa = calculate_dubois_bsa(65.0, 162.0)
+            p2_bmi = calculate_bmi(65.0, 162.0)
+            demo_patient_2 = Patient(
+                patient_id="DEMO-1002",
+                name="Jane Smith (Demo)",
+                phone="+1-555-0188",
+                age=46,
+                weight=65.0,
+                height=162.0,
+                gender="Female",
+                bsa=p2_bsa,
+                bmi=p2_bmi,
+                medical_history="Type 2 Diabetes Mellitus, Gastroesophageal Reflux Disease (GERD)",
+                allergies="Sulfa Drugs",
+                existing_medications="Metformin 500mg BID",
+                created_by="REC-1001",
+                assigned_doctor_id="DOC-1001"
+            )
+
+            db.add_all([demo_patient_1, demo_patient_2])
+            db.commit()
+
+        # 3. Seed Default Patient User Account (linked to a patient profile)
+        patient_user_exists = db.query(User).filter(User.role == "patient").first()
+        if not patient_user_exists:
+            target_p = db.query(Patient).filter(Patient.patient_id.in_(["P-1001", "DEMO-1001"])).first()
+            if not target_p:
+                target_p = db.query(Patient).first()
+            if target_p:
+                pat_user = User(
+                    user_id="PAT-1001",
+                    username="PAT-1001",
+                    email="emma.watson@chronorx.tech",
+                    hashed_password=get_password_hash("PatientSecure2026!"),
+                    full_name=target_p.name,
+                    role="patient",
+                    patient_id=target_p.patient_id,
+                    is_active=True
+                )
+                db.add(pat_user)
+                db.commit()
+
+    finally:
+        db.close()
+
+@app.get("/")
+def root():
+    return {
+        "app": "ChronoRx Tech",
+        "description": "AI-Assisted Clinical Decision Support System (CDSS) Prototype",
+        "version": "1.0.0",
+        "status": "Operational",
+        "disclaimer": "AI-assisted reference information — verify with an authorized healthcare professional.",
+        "documentation": "/docs"
+    }
+
+@app.get("/health")
+@app.get("/api/health")
+def health():
+    return {"status": "healthy"}
+

@@ -1,0 +1,62 @@
+# =============================================================================
+# ChronoRx Tech — Root Git Ignore Configuration
+# Protects secrets, clinical health data, caches, build artifacts, and local environments
+# =============================================================================
+
+# Environment & Secret Keys
+.env
+.env.*
+!.env.example
+*.env
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Python & Bytecode
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*/*/*/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*/.pytest_cache/
+.venv/
+venv/
+ENV/
+env/
+backend/.venv/
+backend/venv/
+
+# Node & Frontend Build Output
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.npm/
+
+# Databases & SQLite
+backend/chronorx.db
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Uploaded Prescriptions & Clinical Documents
+uploads/
+backend/uploads/
+
+# Generated Medical Reports & PDFs
+generated_reports/
+backend/generated_reports/
+
+# Runtime Logs
+*.log
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini

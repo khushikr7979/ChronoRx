@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" width="800" height="1000" style="background:#ffffff; font-family:system-ui, -apple-system, sans-serif;">
+  <!-- Border -->
+  <rect x="20" y="20" width="760" height="960" fill="none" stroke="#0F766E" stroke-width="3" rx="8" />
+
+  <!-- Header Banner -->
+  <rect x="25" y="25" width="750" height="110" fill="#F0FDFA" />
+  <text x="45" y="65" font-size="22" font-weight="bold" fill="#0F766E">CHRONORX HEALTH CLINIC — CARDIOLOGY &amp; INTERNAL MEDICINE</text>
+  <text x="45" y="92" font-size="13" fill="#334155">Attending: Dr. Sarah Jenkins, M.D. | License #MD-88421 | Dept. of Clinical Pharmacology</text>
+  <text x="45" y="115" font-size="11" fill="#64748B">100 Metro Medical Center Parkway, Suite 400 | Phone: (555) 019-8234</text>
+
+  <!-- Demographics Panel -->
+  <rect x="40" y="150" width="720" height="75" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1" rx="4" />
+  <text x="55" y="175" font-size="13" font-weight="bold" fill="#0F172A">Patient ID: DEMO-1001   |   Age: 58 yrs   |   Gender: Male   |   Weight: 82.0 kg   |   Height: 178 cm</text>
+  <text x="55" y="200" font-size="12" fill="#B91C1C" font-weight="bold">Known Allergies: Penicillin (mild urticaria)   |   Clinical Dx: Essential Hypertension, Dyslipidemia</text>
+
+  <!-- Rx Symbol -->
+  <text x="50" y="270" font-size="34" font-weight="bold" font-family="serif" fill="#0F766E">Rx</text>
+  <line x1="40" y1="285" x2="760" y2="285" stroke="#94A3B8" stroke-width="1.5" />
+
+  <!-- Prescribed Items -->
+  <g font-size="14" fill="#1E293B" font-family="Courier, monospace">
+    <text x="60" y="325"><tspan font-weight="bold">1. Atorvastatin 20mg Tablet</tspan> — 1 tab PO at bedtime (ONCE daily at night) x 30 days</text>
+    <text x="60" y="375"><tspan font-weight="bold">2. Lisinopril 10mg Tablet</tspan> — 1 tab PO in the morning (ONCE daily) x 30 days</text>
+    <text x="60" y="425"><tspan font-weight="bold">3. Aspirin 81mg EC Tablet</tspan> — 1 tab PO daily after breakfast x 30 days</text>
+    <text x="60" y="475"><tspan font-weight="bold">4. Metformin 500mg Tablet</tspan> — 1 tab PO BID with morning and evening meals x 30 days</text>
+  </g>
+
+  <!-- Instructions -->
+  <line x1="40" y1="530" x2="760" y2="530" stroke="#CBD5E1" stroke-width="1" />
+  <text x="50" y="560" font-size="13" font-weight="bold" fill="#0F766E">CLINICAL PRECAUTIONS &amp; PATIENT INSTRUCTIONS:</text>
+  <text x="50" y="585" font-size="12" fill="#475569">• Avoid grapefruit juice while taking Atorvastatin (CYP3A4 inhibition hazard).</text>
+  <text x="50" y="605" font-size="12" fill="#475569">• Take Lisinopril consistently each morning. Check and log blood pressure weekly.</text>
+  <text x="50" y="625" font-size="12" fill="#475569">• Take Aspirin immediately after food. Report any dark stools or unexpected bruising.</text>
+  <text x="50" y="645" font-size="12" fill="#475569">• Metformin: Discontinue temporarily before any procedures requiring iodinated contrast media.</text>
+
+  <!-- Signature -->
+  <line x1="500" y1="880" x2="740" y2="880" stroke="#0F172A" stroke-width="1.5" />
+  <text x="500" y="905" font-size="13" font-weight="bold" fill="#0F172A">Dr. Sarah Jenkins, M.D.</text>
+  <text x="500" y="925" font-size="11" fill="#64748B">Date: 2025-05-20 | DEA: BJ8829104</text>
+
+  <!-- Disclaimer Footer -->
+  <text x="45" y="960" font-size="9" fill="#94A3B8" font-style="italic">ChronoRx Tech Prototype Demo Asset — AI-Assisted Clinical Decision Support — Verified Clinician Authorization Required.</text>
+</svg>

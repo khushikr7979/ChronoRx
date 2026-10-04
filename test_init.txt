@@ -1,0 +1,2 @@
+# ChronoRx Tech Root README
+See subdirectories for backend and frontend.
