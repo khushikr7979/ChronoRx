@@ -311,6 +311,66 @@ export const historyAPI = {
   },
 };
 
+// --- 3-Day Patient-Doctor Follow-Up Endpoints ---
+export const followupAPI = {
+  list: async (patientId = null) => {
+    const res = await api.get('/followups', {
+      params: patientId ? { patient_id: patientId } : {}
+    });
+    return res.data;
+  },
+  initiate: async (data) => {
+    const res = await api.post('/followups/initiate', data);
+    return res.data;
+  },
+  getThread: async (sessionId) => {
+    const res = await api.get(`/followups/${sessionId}`);
+    return res.data;
+  },
+  sendMessage: async (sessionId, data) => {
+    const res = await api.post(`/followups/${sessionId}/messages`, data);
+    return res.data;
+  },
+};
+
+// --- Appointment Booking & QR Receipt Endpoints ---
+export const appointmentAPI = {
+  getDoctorsAndSlots: async (date = null, doctorId = null) => {
+    const params = {};
+    if (date) params.date = date;
+    if (doctorId) params.doctor_id = doctorId;
+    const res = await api.get('/appointments/doctors', { params });
+    return res.data;
+  },
+  book: async (data) => {
+    const res = await api.post('/appointments/book', data);
+    return res.data;
+  },
+  list: async (params = {}) => {
+    const res = await api.get('/appointments', { params });
+    return res.data;
+  },
+  getReceipt: async (appointmentId) => {
+    const res = await api.get(`/appointments/${appointmentId}/receipt`);
+    return res.data;
+  },
+  verifyQR: async (qrData, markConfirmed = true) => {
+    const res = await api.post('/appointments/verify-qr', {
+      qr_data: qrData,
+      mark_confirmed: markConfirmed,
+      confirm_checkin: markConfirmed,
+    });
+    return res.data;
+  },
+  updateStatus: async (appointmentId, status, reason = null) => {
+    const res = await api.patch(`/appointments/${appointmentId}/status`, {
+      status,
+      reason,
+    });
+    return res.data;
+  },
+};
+
 // --- Audit & Dashboard Endpoints ---
 export const auditAPI = {
   getPatientAudit: async (patientId) => {
@@ -328,3 +388,4 @@ export const auditAPI = {
 };
 
 export default api;
+

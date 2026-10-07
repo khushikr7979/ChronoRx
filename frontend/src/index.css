@@ -4,8 +4,33 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-800 antialiased font-sans;
+    @apply bg-slate-50 text-slate-800 antialiased font-sans selection:bg-teal-600 selection:text-white;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Subtle, low-contrast medical background visual (ECG wave + clinical cross + stethoscope motif) */
+.medical-clinical-bg {
+  background-color: #f8fafc;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(13, 148, 136, 0.06) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.05) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(14, 116, 144, 0.05) 0px, transparent 50%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%230d9488' stroke-width='1.1' stroke-opacity='0.045'%3E%3Cpath d='M0 80 H45 L54 62 L64 98 L74 50 L84 106 L93 74 L100 80 H160'/%3E%3Cpath d='M28 24 V36 M22 30 H34' stroke-width='1.4'/%3E%3Ccircle cx='128' cy='32' r='8'/%3E%3Cpath d='M120 32 C120 48, 136 48, 136 32'/%3E%3Cpath d='M128 44 V54 C128 60, 138 60, 138 54'/%3E%3C/g%3E%3C/svg%3E");
+  background-attachment: fixed;
+}
+
+@layer components {
+  .clinical-card {
+    @apply bg-white/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 shadow-sm transition-all duration-200 hover:shadow-md hover:border-teal-200/80;
+  }
+
+  .clinical-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 shadow-sm transition focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500/20;
+  }
+
+  .clinical-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm shadow-teal-600/20 transition-all hover:from-teal-700 hover:to-emerald-700 hover:shadow-md active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none;
   }
 }
 

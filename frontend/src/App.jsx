@@ -20,9 +20,11 @@ import ClinicalSummary from './pages/ClinicalSummary';
 import PDFPrescription from './pages/PDFPrescription';
 import DoctorConsultation from './pages/DoctorConsultation';
 import SettingsAudit from './pages/SettingsAudit';
+import ClinicOperations from './pages/ClinicOperations';
 
 const ProtectedLayout = ({ children, allowedRoles = null }) => {
   const { isAuthenticated, loading, user } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   if (loading) {
     return (
@@ -41,10 +43,10 @@ const ProtectedLayout = ({ children, allowedRoles = null }) => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <Navbar />
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar />
+    <div className="min-h-screen medical-clinical-bg flex flex-col">
+      <Navbar onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)} />
+      <div className="flex-1 flex overflow-hidden relative">
+        <Sidebar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {children}
         </main>
@@ -170,6 +172,30 @@ function App() {
               element={
                 <ProtectedLayout allowedRoles={['doctor', 'admin']}>
                   <DoctorConsultation />
+                </ProtectedLayout>
+              }
+            />
+            <Route
+              path="/clinic-operations"
+              element={
+                <ProtectedLayout allowedRoles={['doctor', 'receptionist', 'admin']}>
+                  <ClinicOperations />
+                </ProtectedLayout>
+              }
+            />
+            <Route
+              path="/followups"
+              element={
+                <ProtectedLayout allowedRoles={['doctor', 'receptionist', 'admin']}>
+                  <ClinicOperations />
+                </ProtectedLayout>
+              }
+            />
+            <Route
+              path="/appointments"
+              element={
+                <ProtectedLayout allowedRoles={['doctor', 'receptionist', 'admin']}>
+                  <ClinicOperations />
                 </ProtectedLayout>
               }
             />

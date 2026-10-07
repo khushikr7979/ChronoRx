@@ -144,3 +144,69 @@ class AuditLog(Base):
     details = Column(Text, default="")
     ip_address = Column(String(50), default="127.0.0.1")
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
+class FollowUpSession(Base):
+    __tablename__ = "followup_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String(50), unique=True, index=True, nullable=False) # e.g. FUP-1001
+    consultation_ref = Column(String(80), index=True, nullable=True) # Consultation / Review / Billing reference
+    patient_id = Column(String(50), index=True, nullable=False)
+    patient_name = Column(String(100), nullable=True)
+    doctor_id = Column(String(50), index=True, nullable=False)
+    doctor_name = Column(String(100), nullable=False)
+    review_id = Column(String(50), index=True, nullable=True)
+    diagnosis = Column(Text, default="")
+    billing_reference = Column(String(80), nullable=True)
+    billed_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    follow_up_expires_at = Column(DateTime, nullable=False)
+    status = Column(String(30), default="ACTIVE", index=True) # ACTIVE, EXPIRED, CLOSED
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class FollowUpMessage(Base):
+    __tablename__ = "followup_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(String(50), unique=True, index=True, nullable=False) # e.g. FMSG-1001
+    session_id = Column(String(50), index=True, nullable=False)
+    patient_id = Column(String(50), index=True, nullable=False)
+    doctor_id = Column(String(50), index=True, nullable=True)
+    sender_id = Column(String(50), nullable=False)
+    sender_role = Column(String(20), nullable=False) # patient, doctor
+    sender_name = Column(String(100), nullable=False)
+    message_type = Column(String(30), default="QUESTION") # QUESTION, SIDE_EFFECT, DOCTOR_REPLY
+    severity = Column(String(20), nullable=True) # MILD, MODERATE, SEVERE
+    side_effect_severity = Column(String(20), nullable=True) # MILD, MODERATE, SEVERE
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class Appointment(Base):
+    __tablename__ = "appointments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    appointment_id = Column(String(50), unique=True, index=True, nullable=False) # e.g. APT-1001
+    patient_id = Column(String(50), index=True, nullable=False)
+    patient_name = Column(String(100), nullable=True)
+    doctor_id = Column(String(50), index=True, nullable=False)
+    doctor_name = Column(String(100), nullable=False)
+    department = Column(String(100), default="Internal Medicine & Chronopharmacology")
+    appointment_date = Column(String(20), index=True, nullable=False) # YYYY-MM-DD
+    time_slot = Column(String(30), index=True, nullable=False) # e.g. "10:00 AM"
+    appointment_time = Column(String(30), nullable=True) # Alias/mirror of time_slot
+    consultation_type = Column(String(30), default="IN_PERSON")
+    reason = Column(Text, default="Scheduled Clinical Consultation")
+    status = Column(String(30), default="BOOKED", index=True) # BOOKED, CONFIRMED, COMPLETED, CANCELLED, NO_SHOW
+    qr_token = Column(String(120), unique=True, index=True, nullable=False)
+    qr_payload = Column(String(255), nullable=False)
+    receipt_number = Column(String(50), unique=True, nullable=False)
+    verified_at = Column(DateTime, nullable=True)
+    verified_by = Column(String(50), nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    cancelled_by = Column(String(50), nullable=True)
+    cancel_reason = Column(Text, nullable=True)
+    created_by = Column(String(50), nullable=False, default="SYSTEM")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+

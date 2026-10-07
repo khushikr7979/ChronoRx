@@ -449,3 +449,155 @@ class PatientHistoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- 3-Day Free Patient-Doctor Follow-Up Schemas ---
+class FollowUpInitiateRequest(BaseModel):
+    patient_id: str
+    doctor_id: Optional[str] = None
+    doctor_name: Optional[str] = None
+    review_id: Optional[str] = None
+    consultation_ref: Optional[str] = None
+    diagnosis: Optional[str] = ""
+    billing_reference: Optional[str] = None
+
+class FollowUpMessageCreate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=2000, description="Follow-up question, side-effect report, or clinician reply")
+    message_type: Optional[str] = Field("QUESTION", description="QUESTION, SIDE_EFFECT, or DOCTOR_REPLY")
+    severity: Optional[str] = Field(None, description="MILD, MODERATE, or SEVERE (optional for SIDE_EFFECT)")
+    side_effect_severity: Optional[str] = Field(None, description="Alias for severity")
+
+class FollowUpMessageResponse(BaseModel):
+    id: int
+    message_id: str
+    session_id: str
+    patient_id: str
+    doctor_id: str
+    sender_id: str
+    sender_role: str
+    sender_name: str
+    message_type: str
+    severity: Optional[str] = None
+    side_effect_severity: Optional[str] = None
+    content: str
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class FollowUpSessionResponse(BaseModel):
+    id: int
+    session_id: str
+    consultation_ref: Optional[str] = None
+    patient_id: str
+    patient_name: Optional[str] = None
+    doctor_id: str
+    doctor_name: str
+    review_id: Optional[str] = None
+    diagnosis: Optional[str] = ""
+    billing_reference: Optional[str] = None
+    billed_at: datetime.datetime
+    follow_up_expires_at: datetime.datetime
+    status: str
+    is_expired: bool = False
+    is_locked: bool = False
+    remaining_seconds: int = 0
+    remaining_label: str = ""
+    non_emergency_disclaimer: str = (
+        "Follow-up communication is strictly for non-emergency post-consultation questions "
+        "and side-effect reporting within 72 hours of consultation finalization. "
+        "For medical emergencies, call emergency services immediately."
+    )
+    emergency_disclaimer: str = (
+        "Follow-up communication is strictly for non-emergency post-consultation questions "
+        "and side-effect reporting within 72 hours of consultation finalization. "
+        "For medical emergencies, call emergency services immediately."
+    )
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class FollowUpThreadResponse(BaseModel):
+    session: FollowUpSessionResponse
+    messages: List[FollowUpMessageResponse] = []
+
+# --- Appointment Booking & QR Receipt Schemas ---
+class DoctorSlotResponse(BaseModel):
+    doctor_id: str
+    doctor_name: str
+    email: Optional[str] = ""
+    department: str = "Internal Medicine & Chronopharmacology"
+    date: Optional[str] = None
+    available_slots: List[str] = []
+    booked_slots: List[str] = []
+
+class AppointmentCreate(BaseModel):
+    patient_id: Optional[str] = None
+    doctor_id: str = Field(..., description="Target Doctor System ID (e.g. DOC-1001)")
+    appointment_date: str = Field(..., description="Appointment date in YYYY-MM-DD format")
+    time_slot: Optional[str] = Field(None, description="Selected time slot (e.g. '10:00 AM')")
+    appointment_time: Optional[str] = Field(None, description="Alias for time_slot")
+    consultation_type: Optional[str] = "IN_PERSON"
+    department: Optional[str] = "Internal Medicine & Chronopharmacology"
+    reason: Optional[str] = "Scheduled Clinical Consultation"
+
+class AppointmentStatusUpdate(BaseModel):
+    status: str = Field(..., description="BOOKED, CONFIRMED, COMPLETED, CANCELLED, or NO_SHOW")
+    reason: Optional[str] = None
+
+class AppointmentResponse(BaseModel):
+    id: int
+    appointment_id: str
+    receipt_number: str
+    patient_id: str
+    patient_name: Optional[str] = None
+    doctor_id: str
+    doctor_name: str
+    department: str
+    appointment_date: str
+    time_slot: str
+    appointment_time: Optional[str] = None
+    consultation_type: Optional[str] = "IN_PERSON"
+    reason: Optional[str] = ""
+    status: str
+    qr_token: str
+    qr_payload: str
+    qr_svg_data_uri: Optional[str] = None
+    verified_at: Optional[datetime.datetime] = None
+    verified_by: Optional[str] = None
+    cancelled_at: Optional[datetime.datetime] = None
+    cancelled_by: Optional[str] = None
+    cancel_reason: Optional[str] = None
+    created_by: str
+    created_at: datetime.datetime
+    updated_at: Optional[datetime.datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class QRVerifyRequest(BaseModel):
+    qr_data: str = Field(..., description="Scanned QR payload or opaque verification token")
+    mark_confirmed: bool = Field(True, description="Automatically transition BOOKED status to CONFIRMED upon valid scan")
+    confirm_checkin: Optional[bool] = Field(None, description="Alias for mark_confirmed")
+
+class QRVerifyResponse(BaseModel):
+    valid: bool
+    verification_status: str
+    appointment_id: str
+    receipt_number: str
+    patient_id: str
+    patient_display_ref: Optional[str] = None
+    doctor_id: str
+    doctor_name: str
+    department: str
+    appointment_date: str
+    time_slot: str
+    consultation_type: Optional[str] = "IN_PERSON"
+    status: str
+    appointment_status: str
+    verified_at: Optional[datetime.datetime] = None
+    verified_by: Optional[str] = None
+    message: str
+    pii_exposed_in_qr: bool = False
+
+

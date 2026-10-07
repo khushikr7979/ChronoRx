@@ -282,6 +282,13 @@ const Dashboard = () => {
                 Register New Patient
               </button>
               <button
+                onClick={() => navigate('/clinic-operations')}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-sm flex items-center gap-2 transition text-sm"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                QR Verify &amp; Appointments
+              </button>
+              <button
                 onClick={() => navigate('/scan')}
                 className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg border border-slate-700 flex items-center gap-2 transition text-sm"
               >
@@ -296,7 +303,14 @@ const Dashboard = () => {
                 className="px-4 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-lg shadow-md hover:shadow-teal-500/20 flex items-center gap-2 transition text-sm"
               >
                 <ShieldCheck className="w-4 h-4" />
-                Staff Directory & Audit
+                Staff Directory &amp; Audit
+              </button>
+              <button
+                onClick={() => navigate('/clinic-operations')}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-sm flex items-center gap-2 transition text-sm"
+              >
+                <Clock className="w-4 h-4" />
+                Follow-Ups &amp; QR Desk
               </button>
               <button
                 onClick={() => navigate('/patients')}
@@ -314,6 +328,13 @@ const Dashboard = () => {
               >
                 <Camera className="w-4 h-4" />
                 Scan Prescription
+              </button>
+              <button
+                onClick={() => navigate('/clinic-operations')}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg shadow-sm flex items-center gap-2 transition text-sm"
+              >
+                <Clock className="w-4 h-4" />
+                3-Day Follow-Ups &amp; QR
               </button>
               <button
                 onClick={() => navigate('/dose-support')}

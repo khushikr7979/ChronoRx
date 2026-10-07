@@ -1,10 +1,10 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePatient } from '../context/PatientContext';
-import { Activity, User, LogOut, ShieldCheck, ChevronDown, UserCheck } from 'lucide-react';
+import { Activity, User, LogOut, ShieldCheck, ChevronDown, UserCheck, Menu } from 'lucide-react';
 import MedicalDisclaimer from './MedicalDisclaimer';
 
-const Navbar = () => {
+const Navbar = ({ onToggleMobileMenu }) => {
   const { user, logout } = useAuth();
   const { selectedPatient, patientsList, setSelectedPatient } = usePatient();
 
@@ -22,11 +22,21 @@ const Navbar = () => {
   };
 
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+    <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/90 sticky top-0 z-40 shadow-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Brand Logo & Name */}
+          {/* Brand Logo & Mobile Menu Toggle */}
           <div className="flex items-center gap-3">
+            {onToggleMobileMenu && (
+              <button
+                type="button"
+                onClick={onToggleMobileMenu}
+                className="lg:hidden p-2 rounded-xl text-slate-600 hover:text-teal-700 hover:bg-slate-100 transition"
+                aria-label="Toggle Navigation Menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-600 to-teal-800 flex items-center justify-center text-white shadow-md shadow-teal-500/20">
               <Activity className="w-6 h-6" />
             </div>
@@ -39,7 +49,7 @@ const Navbar = () => {
                   Tech CDSS
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 hidden sm:block">Clinical Decision Support & Chronopharmacology</p>
+              <p className="text-[11px] text-slate-500 hidden sm:block">Clinical Decision Support &amp; Chronopharmacology</p>
             </div>
           </div>
 

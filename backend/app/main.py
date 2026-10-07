@@ -6,7 +6,14 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.database import engine, Base, SessionLocal
 from app.api import api_router
-from app.models.models import User, Patient, ScanRecord
+from app.models.models import (
+    User,
+    Patient,
+    ScanRecord,
+    FollowUpSession,
+    FollowUpMessage,
+    Appointment,
+)
 from app.security.auth_handler import get_password_hash
 from app.services.dose_service import calculate_dubois_bsa, calculate_bmi
 
@@ -33,6 +40,19 @@ def migrate_sqlite_columns():
                 u_cols = [r[1] for r in cursor.fetchall()]
                 if "patient_id" not in u_cols:
                     cursor.execute("ALTER TABLE users ADD COLUMN patient_id VARCHAR(50)")
+
+                cursor.execute("PRAGMA table_info(followup_sessions)")
+                f_cols = [r[1] for r in cursor.fetchall()]
+                if f_cols and "consultation_ref" not in f_cols:
+                    cursor.execute("ALTER TABLE followup_sessions ADD COLUMN consultation_ref VARCHAR(80)")
+
+                cursor.execute("PRAGMA table_info(appointments)")
+                a_cols = [r[1] for r in cursor.fetchall()]
+                if a_cols:
+                    if "appointment_time" not in a_cols:
+                        cursor.execute("ALTER TABLE appointments ADD COLUMN appointment_time VARCHAR(30)")
+                    if "updated_at" not in a_cols:
+                        cursor.execute("ALTER TABLE appointments ADD COLUMN updated_at TIMESTAMP")
                 conn.commit()
                 conn.close()
     except Exception as e:

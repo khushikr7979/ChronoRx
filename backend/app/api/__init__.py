@@ -11,6 +11,8 @@ from app.api.summary import router as summary_router
 from app.api.prescription import router as prescription_router, prescriptions_router
 from app.api.audit import router as audit_router
 from app.api.patient_history import router as patient_history_router
+from app.api.followups import router as followups_router
+from app.api.appointments import router as appointments_router
 
 api_router = APIRouter()
 
@@ -27,4 +29,7 @@ api_router.include_router(summary_router)
 api_router.include_router(prescription_router)
 api_router.include_router(prescriptions_router)
 api_router.include_router(patient_history_router)
+api_router.include_router(followups_router)
+api_router.include_router(appointments_router)
 api_router.include_router(audit_router)
+
