@@ -33,6 +33,7 @@ import {
   XCircle
 } from 'lucide-react';
 import MedicalDisclaimer from '../components/MedicalDisclaimer';
+import { UserProfileCard, UserAvatar } from '../components/UserProfileCard';
 
 const PatientDashboard = () => {
   const { user, logout } = useAuth();
@@ -308,20 +309,24 @@ const PatientDashboard = () => {
       <div className="bg-gradient-to-r from-emerald-900 via-teal-800 to-teal-700 text-white rounded-2xl p-6 shadow-lg border border-emerald-700/40">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-white/10 backdrop-blur rounded-2xl flex items-center justify-center border border-white/20 shadow-inner">
-              <User className="w-8 h-8 text-emerald-200" />
-            </div>
+            <UserAvatar user={user} size="lg" />
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl font-bold tracking-tight">
-                  {patientData?.name || user?.full_name || 'Patient Portal'}
+                  {user?.full_name || patientData?.name || 'Patient Portal'}
                 </h1>
+                <span className="bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 text-[11px] font-semibold px-2.5 py-0.5 rounded-full">
+                  Patient
+                </span>
+                <span className="bg-white/15 text-white border border-white/25 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full">
+                  {user?.user_id}
+                </span>
                 <span className="bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 text-[11px] font-mono font-semibold px-2.5 py-0.5 rounded-full">
                   {patientId}
                 </span>
               </div>
               <p className="text-xs text-emerald-100 mt-0.5">
-                ChronoRx Patient Care Portal &bull; Account: <span className="font-mono">{user?.user_id}</span> ({user?.email})
+                ChronoRx Patient Care Portal &bull; System ID: <span className="font-mono font-bold">{user?.user_id}</span>
               </p>
             </div>
           </div>
@@ -508,6 +513,8 @@ const PatientDashboard = () => {
           </div>
 
           <div className="space-y-6">
+            <UserProfileCard compact={false} />
+
             <div className="clinical-card p-5">
               <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <Shield className="w-4 h-4 text-emerald-600" />

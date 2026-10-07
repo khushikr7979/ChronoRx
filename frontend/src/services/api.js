@@ -70,6 +70,28 @@ export const authAPI = {
   },
 };
 
+// --- Profile & Photo Endpoints ---
+export const profileAPI = {
+  getMe: async () => {
+    const res = await api.get('/profile/me');
+    return res.data;
+  },
+  uploadPhoto: async (fileBlob, filename = null) => {
+    const formData = new FormData();
+    formData.append('file', fileBlob, filename || fileBlob.name || 'profile.jpg');
+    const res = await api.post('/profile/photo', formData, {
+      headers: {
+        'Content-Type': undefined, // Let browser set multipart boundary automatically
+      },
+    });
+    return res.data;
+  },
+  deletePhoto: async () => {
+    const res = await api.delete('/profile/photo');
+    return res.data;
+  },
+};
+
 // --- Patient Endpoints ---
 export const patientAPI = {
   list: async (params = {}) => {

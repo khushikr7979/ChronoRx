@@ -67,6 +67,8 @@ def migrate_database_schema():
             u_cols = {c["name"] for c in inspector.get_columns("users")}
             if "patient_id" not in u_cols:
                 alter_statements.append("ALTER TABLE users ADD COLUMN patient_id VARCHAR(50)")
+            if "profile_photo" not in u_cols:
+                alter_statements.append("ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255)")
 
         if "followup_sessions" in existing_tables:
             f_cols = {c["name"] for c in inspector.get_columns("followup_sessions")}
@@ -145,6 +147,7 @@ async def add_medical_safety_header(request: Request, call_next):
 
 # Mount static file endpoints
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+os.makedirs(os.path.join(settings.UPLOAD_DIR, "profiles"), exist_ok=True)
 os.makedirs(settings.GENERATED_REPORTS_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 app.mount("/reports", StaticFiles(directory=settings.GENERATED_REPORTS_DIR), name="reports")

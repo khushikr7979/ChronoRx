@@ -18,11 +18,12 @@ import {
   QrCode,
   MessageSquare
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, getRoleDisplayLabel } from '../context/AuthContext';
 import { usePatient } from '../context/PatientContext';
+import { UserAvatar } from './UserProfileCard';
 
 const Sidebar = ({ mobileOpen = false, onCloseMobile }) => {
-  const { user } = useAuth();
+  const { user, openProfileModal } = useAuth();
   const { selectedPatient } = usePatient();
 
   // Role-Based Navigation Config
@@ -98,19 +99,35 @@ const Sidebar = ({ mobileOpen = false, onCloseMobile }) => {
         <div className="space-y-6 overflow-y-auto">
           {/* User Role Card */}
           {user && (
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                 <span>Current Session</span>
                 <span className="font-mono text-teal-800 bg-teal-100/80 px-1.5 py-0.2 rounded text-[10px] font-bold">
                   {user.user_id}
                 </span>
               </div>
-              <div className="text-xs font-bold text-slate-900 truncate">
-                {user.full_name}
+              <div className="flex items-center gap-2.5">
+                <UserAvatar user={user} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-slate-900 truncate">
+                    {user.full_name}
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {getRoleDisplayLabel(user.role)}
+                  </div>
+                </div>
               </div>
-              <div className="text-[11px] text-slate-500 capitalize">
-                {user.role === 'doctor' ? '🩺 Clinician / Doctor' : user.role === 'receptionist' ? '📋 Intake Receptionist' : user.role === 'patient' ? '👤 Verified Patient' : '⚙️ Administrator'}
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onCloseMobile) onCloseMobile();
+                  openProfileModal(false);
+                }}
+                className="w-full py-1.5 px-2.5 bg-white hover:bg-teal-50 text-teal-800 border border-slate-200 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition"
+              >
+                <Camera className="w-3 h-3 text-teal-600" />
+                <span>Manage Profile Photo</span>
+              </button>
             </div>
           )}
 

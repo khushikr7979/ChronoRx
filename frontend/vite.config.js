@@ -9,6 +9,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/auth': 'http://127.0.0.1:8000',
+      '/profile': 'http://127.0.0.1:8000',
       '/patients': 'http://127.0.0.1:8000',
       '/scan': 'http://127.0.0.1:8000',
       '/drugs': 'http://127.0.0.1:8000',

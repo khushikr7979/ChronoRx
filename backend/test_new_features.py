@@ -706,8 +706,263 @@ def run_all_feature_tests():
         assert patient_count_before == patient_count_after == 1
         print("STEP1-10. Duplicate Submission Prevention        [PASS] Guarded & Idempotent")
 
+        # =====================================================================
+        # PART 5: PROFILE PHOTO SYSTEM (14 MANDATORY TESTS)
+        # =====================================================================
+        print("\n--- PART 5: PROFILE PHOTO SYSTEM (14 TESTS) ---")
+        import io
+        from jose import jwt as pyjwt
+        from PIL import Image
+        from app.config import settings as app_settings
+
+        def make_test_image_bytes(fmt: str, size=(32, 32), color=(13, 148, 136)) -> bytes:
+            buf = io.BytesIO()
+            img = Image.new("RGB", size, color=color)
+            img.save(buf, format=fmt)
+            return buf.getvalue()
+
+        # Test 11 & 1: Profile without photo returns default-avatar state & Authenticated user can retrieve own profile
+        res_prof_doc = client.get("/profile/me", headers=h_doc1)
+        assert res_prof_doc.status_code == 200, res_prof_doc.text
+        prof_doc_data = res_prof_doc.json()
+        assert prof_doc_data["name"] == "Dr. Sarah Jenkins, M.D."
+        assert prof_doc_data["role"] == "doctor"
+        assert prof_doc_data["role_label"] == "Doctor / Clinician"
+        assert prof_doc_data["system_id"] == "DOC-1001"
+        assert prof_doc_data["profile_photo"] is None
+        assert prof_doc_data["default_avatar"] is True
+        assert prof_doc_data["has_photo"] is False
+        assert prof_doc_data["initials"] == "SJ"
+        # Verify no sensitive fields are exposed
+        for forbidden_key in ("password", "hashed_password", "access_token", "token", "secret_key"):
+            assert forbidden_key not in prof_doc_data
+
+        # Also check Receptionist, Patient, and Admin default profiles
+        h_adm1 = login("ADM-1001", "AdminSecure2026!")
+        res_prof_rec = client.get("/profile/me", headers=h_rec1)
+        assert res_prof_rec.status_code == 200 and res_prof_rec.json()["initials"] == "AR"
+        res_prof_pat = client.get("/profile/me", headers=h_pat1)
+        assert res_prof_pat.status_code == 200 and res_prof_pat.json()["system_id"] == "PAT-3001"
+        res_prof_adm = client.get("/profile/me", headers=h_adm1)
+        assert res_prof_adm.status_code == 200 and res_prof_adm.json()["initials"] == "DV"
+        print("PROF-01. Authenticated User Retrieves Own Profile [PASS] Safe fields only")
+        print("PROF-11. Profile Without Photo Default Avatar    [PASS] Initials SJ/AR/DV, profile_photo=None")
+
+        # Test 2: User can upload valid JPG
+        jpg_bytes = make_test_image_bytes("JPEG")
+        res_up_jpg = client.post(
+            "/profile/photo",
+            files={"file": ("Original Unsafe Name!!.jpg", jpg_bytes, "image/jpeg")},
+            headers=h_doc1,
+        )
+        assert res_up_jpg.status_code == 200, res_up_jpg.text
+        jpg_data = res_up_jpg.json()
+        assert jpg_data["has_photo"] is True
+        assert jpg_data["default_avatar"] is False
+        assert jpg_data["profile_photo"].startswith("/uploads/profiles/profile_DOC-1001_")
+        assert jpg_data["profile_photo"].endswith(".jpg")
+        assert "Original Unsafe Name" not in jpg_data["profile_photo"]
+        jpg_disk_path = os.path.join(
+            app_settings.UPLOAD_DIR, "profiles", os.path.basename(jpg_data["profile_photo"])
+        )
+        assert os.path.isfile(jpg_disk_path)
+        print("PROF-02. Upload Valid JPG                        [PASS] Stored as", jpg_data["profile_photo"])
+
+        # Test 3: User can upload valid PNG (test with Receptionist REC-1001)
+        png_bytes = make_test_image_bytes("PNG")
+        res_up_png = client.post(
+            "/profile/photo",
+            files={"file": ("reception_avatar.png", png_bytes, "image/png")},
+            headers=h_rec1,
+        )
+        assert res_up_png.status_code == 200, res_up_png.text
+        png_data = res_up_png.json()
+        assert png_data["profile_photo"].startswith("/uploads/profiles/profile_REC-1001_")
+        assert png_data["profile_photo"].endswith(".png")
+        png_disk_path = os.path.join(
+            app_settings.UPLOAD_DIR, "profiles", os.path.basename(png_data["profile_photo"])
+        )
+        assert os.path.isfile(png_disk_path)
+        print("PROF-03. Upload Valid PNG                        [PASS] Stored as", png_data["profile_photo"])
+
+        # Test 4: User can upload valid WEBP (test with Patient PAT-3001)
+        webp_bytes = make_test_image_bytes("WEBP")
+        res_up_webp = client.post(
+            "/profile/photo",
+            files={"file": ("patient_avatar.webp", webp_bytes, "image/webp")},
+            headers=h_pat1,
+        )
+        assert res_up_webp.status_code == 200, res_up_webp.text
+        webp_data = res_up_webp.json()
+        assert webp_data["profile_photo"].startswith("/uploads/profiles/profile_PAT-3001_")
+        assert webp_data["profile_photo"].endswith(".webp")
+        webp_disk_path = os.path.join(
+            app_settings.UPLOAD_DIR, "profiles", os.path.basename(webp_data["profile_photo"])
+        )
+        assert os.path.isfile(webp_disk_path)
+        print("PROF-04. Upload Valid WEBP                       [PASS] Stored as", webp_data["profile_photo"])
+
+        # Test 5: Invalid file types are rejected (SVG, EXE, spoofed JPG with script bytes, double extension)
+        svg_payload = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+        res_bad_svg = client.post(
+            "/profile/photo",
+            files={"file": ("vector.svg", svg_payload, "image/svg+xml")},
+            headers=h_doc1,
+        )
+        assert res_bad_svg.status_code == 400
+
+        res_bad_exe = client.post(
+            "/profile/photo",
+            files={"file": ("malware.exe", b"MZ\x90\x00\x03\x00\x00\x00", "application/octet-stream")},
+            headers=h_doc1,
+        )
+        assert res_bad_exe.status_code == 400
+
+        res_spoofed_jpg = client.post(
+            "/profile/photo",
+            files={"file": ("disguised.jpg", b"#!/bin/bash\necho hacked", "image/jpeg")},
+            headers=h_doc1,
+        )
+        assert res_spoofed_jpg.status_code == 400
+
+        res_double_ext = client.post(
+            "/profile/photo",
+            files={"file": ("shell.php.jpg", jpg_bytes, "image/jpeg")},
+            headers=h_doc1,
+        )
+        assert res_double_ext.status_code == 400
+        print("PROF-05. Invalid File Types Rejected             [PASS] SVG, EXE, Spoofed, Double-Ext -> 400")
+
+        # Test 6: Oversized file is rejected (> 5 MB)
+        oversized_bytes = b"\xff\xd8\xff\xe0" + (b"\x00" * (5 * 1024 * 1024 + 1024))
+        res_oversize = client.post(
+            "/profile/photo",
+            files={"file": ("huge_photo.jpg", oversized_bytes, "image/jpeg")},
+            headers=h_doc1,
+        )
+        assert res_oversize.status_code == 400
+        print("PROF-06. Oversized File (>5MB) Rejected          [PASS] HTTP 400")
+
+        # Test 7: Unauthenticated upload is rejected
+        res_unauth_upload = client.post(
+            "/profile/photo",
+            files={"file": ("unauth.jpg", jpg_bytes, "image/jpeg")},
+        )
+        assert res_unauth_upload.status_code == 401
+        res_unauth_get = client.get("/profile/me")
+        assert res_unauth_get.status_code == 401
+        res_unauth_del = client.delete("/profile/photo")
+        assert res_unauth_del.status_code == 401
+        print("PROF-07. Unauthenticated Access Rejected         [PASS] HTTP 401")
+
+        # Test 8: User cannot modify or view another user's profile photo
+        res_idor_post_path = client.post(
+            "/profile/photo/DOC-2002",
+            files={"file": ("hack.jpg", jpg_bytes, "image/jpeg")},
+            headers=h_doc1,
+        )
+        assert res_idor_post_path.status_code == 403
+
+        res_idor_post_query = client.post(
+            "/profile/photo?user_id=REC-1001",
+            files={"file": ("hack.jpg", jpg_bytes, "image/jpeg")},
+            headers=h_pat1,
+        )
+        assert res_idor_post_query.status_code == 403
+
+        res_idor_del = client.delete("/profile/photo/REC-1001", headers=h_pat1)
+        assert res_idor_del.status_code == 403
+
+        res_idor_get = client.get("/profile/DOC-1001", headers=h_pat1)
+        assert res_idor_get.status_code == 403
+        print("PROF-08. Cross-User Photo Modification Blocked   [PASS] HTTP 403")
+
+        # Test 9: User can replace own photo (and old file is cleaned up after new file is stored)
+        replacement_png_bytes = make_test_image_bytes("PNG", size=(48, 48), color=(16, 185, 129))
+        res_replace = client.post(
+            "/profile/photo",
+            files={"file": ("updated_doctor.png", replacement_png_bytes, "image/png")},
+            headers=h_doc1,
+        )
+        assert res_replace.status_code == 200, res_replace.text
+        rep_data = res_replace.json()
+        assert rep_data["profile_photo"] != jpg_data["profile_photo"]
+        assert rep_data["profile_photo"].endswith(".png")
+        new_doc_disk_path = os.path.join(
+            app_settings.UPLOAD_DIR, "profiles", os.path.basename(rep_data["profile_photo"])
+        )
+        assert os.path.isfile(new_doc_disk_path)
+        assert not os.path.exists(jpg_disk_path), "Old profile photo should be cleaned up upon replacement"
+        print("PROF-09. User Replaces Own Photo & Old Cleaned   [PASS] New:", rep_data["profile_photo"])
+
+        # Test 10: User can delete own photo
+        res_del_doc = client.delete("/profile/photo", headers=h_doc1)
+        assert res_del_doc.status_code == 200, res_del_doc.text
+        del_data = res_del_doc.json()
+        assert del_data["profile_photo"] is None
+        assert del_data["has_photo"] is False
+        assert del_data["default_avatar"] is True
+        assert del_data["initials"] == "SJ"
+        assert not os.path.exists(new_doc_disk_path), "Deleted profile photo file should be removed from disk"
+
+        # Clean up REC-1001 and PAT-3001 test photos as well
+        assert client.delete("/profile/photo", headers=h_rec1).status_code == 200
+        assert client.delete("/profile/photo", headers=h_pat1).status_code == 200
+        print("PROF-10. User Deletes Own Photo & File Removed   [PASS] Reset to default avatar")
+
+        # Verify Profile Photo Audit Logs (UPLOADED, UPDATED, DELETED)
+        prof_audits = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.Action.in_(
+                    ["PROFILE_PHOTO_UPLOADED", "PROFILE_PHOTO_UPDATED", "PROFILE_PHOTO_DELETED"]
+                )
+                if hasattr(AuditLog, "Action")
+                else AuditLog.action.in_(
+                    ["PROFILE_PHOTO_UPLOADED", "PROFILE_PHOTO_UPDATED", "PROFILE_PHOTO_DELETED"]
+                )
+            )
+            .all()
+        )
+        recorded_prof_actions = {a.action for a in prof_audits}
+        assert "PROFILE_PHOTO_UPLOADED" in recorded_prof_actions
+        assert "PROFILE_PHOTO_UPDATED" in recorded_prof_actions
+        assert "PROFILE_PHOTO_DELETED" in recorded_prof_actions
+
+        # Test 12: Existing login still works & JWT does NOT contain profile photo
+        res_relogin = client.post(
+            "/auth/login",
+            json={"identifier": "DOC-1001", "password": "ClinicianPass2026!"},
+        )
+        assert res_relogin.status_code == 200
+        relogin_json = res_relogin.json()
+        decoded_jwt = pyjwt.decode(
+            relogin_json["access_token"],
+            app_settings.SECRET_KEY,
+            algorithms=[app_settings.ALGORITHM],
+        )
+        assert "profile_photo" not in decoded_jwt
+        print("PROF-12. Existing Login Works & Clean JWT        [PASS] No photo in JWT")
+
+        # Test 13: Existing RBAC still works
+        assert client.get("/patients/queue", headers=h_pat1).status_code == 403
+        assert client.get("/audit", headers=h_pat1).status_code == 403
+        pat_own_list = client.get("/patients", headers=h_pat1)
+        assert pat_own_list.status_code == 200 and len(pat_own_list.json()) == 1
+        assert pat_own_list.json()[0]["patient_id"] == "P-3001"
+        assert client.get("/patients", headers=h_doc1).status_code == 200
+        assert client.get("/audit", headers=h_adm1).status_code == 200
+        print("PROF-13. Existing RBAC Enforcement Intact        [PASS]")
+
+        # Test 14: Existing patient IDOR protection still works
+        assert client.get("/patients/P-3002", headers=h_pat1).status_code == 403
+        assert client.get("/prescriptions/P-3002", headers=h_pat1).status_code == 403
+        assert client.get("/patient-history/P-3002", headers=h_pat1).status_code == 403
+        assert client.get("/profile/PAT-3002", headers=h_pat1).status_code == 403
+        print("PROF-14. Existing Patient IDOR Protection Intact [PASS]")
+
         print("=" * 78)
-        print("ALL 41 VERIFICATION & REGRESSION CHECKS PASSED WITH ZERO ERRORS!")
+        print("ALL 55 VERIFICATION & REGRESSION CHECKS PASSED WITH ZERO ERRORS!")
         print("=" * 78)
 
         db.close()

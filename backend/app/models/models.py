@@ -13,6 +13,7 @@ class User(Base):
     full_name = Column(String(100), nullable=False)
     role = Column(String(20), default="doctor", nullable=False)  # doctor, receptionist, admin, patient
     patient_id = Column(String(50), nullable=True, index=True)   # Linked patient profile ID (e.g. P-1001)
+    profile_photo = Column(String(255), nullable=True, default=None)  # Secure relative path/URL to profile photo
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 

@@ -24,8 +24,25 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     patient_id: Optional[str] = None
+    profile_photo: Optional[str] = None
     is_active: bool
     created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class ProfileResponse(BaseModel):
+    name: str
+    full_name: str
+    role: str
+    role_label: str
+    system_id: str
+    user_id: str
+    patient_id: Optional[str] = None
+    profile_photo: Optional[str] = None
+    has_photo: bool = False
+    default_avatar: bool = True
+    initials: str = "U"
 
     class Config:
         from_attributes = True

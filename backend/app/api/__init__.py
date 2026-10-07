@@ -13,10 +13,12 @@ from app.api.audit import router as audit_router
 from app.api.patient_history import router as patient_history_router
 from app.api.followups import router as followups_router
 from app.api.appointments import router as appointments_router
+from app.api.profile import router as profile_router
 
 api_router = APIRouter()
 
 api_router.include_router(auth_router)
+api_router.include_router(profile_router)
 api_router.include_router(patients_router)
 api_router.include_router(medications_router)
 api_router.include_router(scan_router)
