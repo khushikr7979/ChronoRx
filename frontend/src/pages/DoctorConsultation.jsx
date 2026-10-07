@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   doseAPI,
@@ -36,12 +36,13 @@ import MedicalDisclaimer from '../components/MedicalDisclaimer';
 
 const DoctorConsultation = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const {
     selectedPatient,
     setSelectedPatient,
     patientsList,
+    refreshPatients,
     diagnosis,
     setDiagnosis,
     clinicianNotes,
@@ -53,10 +54,13 @@ const DoctorConsultation = () => {
     currentInteractions,
     setCurrentInteractions,
     updatePatientStatus,
+    consultationContext,
   } = usePatient();
 
   // Consultation Step: 1 = Clinical Notes, 2 = Medicines & Posology, 3 = DDI, 4 = Timetable & Review, 5 = Delivery
   const [activeStep, setActiveStep] = useState(1);
+  const [savingStep1, setSavingStep1] = useState(false);
+  const [step1SavedBanner, setStep1SavedBanner] = useState('');
 
   // New Medicine input form state
   const [medName, setMedName] = useState('');
@@ -91,19 +95,103 @@ const DoctorConsultation = () => {
   const [deliveryStatusMsg, setDeliveryStatusMsg] = useState(null);
 
   const [errorMsg, setErrorMsg] = useState('');
+  const lastQueryPatientRef = useRef(null);
+  const prevSelectedPatientIdRef = useRef(selectedPatient?.patient_id || null);
 
-  // Auto-load patient from query param or keep selected
+  // Ensure patients list is loaded when opening Doctor Consultation directly
+  useEffect(() => {
+    if (patientsList.length === 0) {
+      refreshPatients();
+    }
+  }, [patientsList.length, refreshPatients]);
+
+  // Auto-load patient from query param when URL query param changes
   useEffect(() => {
     const pId = searchParams.get('patient_id');
-    if (pId && selectedPatient?.patient_id !== pId) {
+    if (pId && lastQueryPatientRef.current !== pId) {
       const found = patientsList.find((p) => p.patient_id === pId);
       if (found) {
+        lastQueryPatientRef.current = pId;
         setSelectedPatient(found);
-        if (found.diagnosis) setDiagnosis(found.diagnosis);
-        if (found.clinical_notes) setClinicianNotes(found.clinical_notes);
+        setDiagnosis(found.diagnosis || '');
+        setClinicianNotes(found.clinical_notes || '');
+      } else {
+        patientAPI
+          .get(pId)
+          .then((fetched) => {
+            if (fetched) {
+              lastQueryPatientRef.current = pId;
+              setSelectedPatient(fetched);
+              setDiagnosis(fetched.diagnosis || '');
+              setClinicianNotes(fetched.clinical_notes || '');
+            }
+          })
+          .catch(() => {});
       }
     }
-  }, [searchParams, patientsList]);
+  }, [searchParams, patientsList, setSelectedPatient, setDiagnosis, setClinicianNotes]);
+
+  // Sync diagnosis/notes when user switches to a different patient
+  useEffect(() => {
+    const currentId = selectedPatient?.patient_id || null;
+    if (currentId && prevSelectedPatientIdRef.current !== currentId) {
+      prevSelectedPatientIdRef.current = currentId;
+      setDiagnosis(selectedPatient.diagnosis || '');
+      setClinicianNotes(selectedPatient.clinical_notes || '');
+      setDeliveryPhone(selectedPatient.phone || '');
+      setErrorMsg('');
+    }
+  }, [selectedPatient, setDiagnosis, setClinicianNotes]);
+
+  // Step 1 handler: Validate, persist diagnosis & consultation notes to backend, and proceed to Step 2
+  const handleSaveAndProceedToMedicines = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (savingStep1) return;
+
+    setErrorMsg('');
+    setStep1SavedBanner('');
+
+    if (!selectedPatient || !selectedPatient.patient_id) {
+      setErrorMsg('Please select a valid patient before saving diagnosis and consultation notes.');
+      return;
+    }
+
+    const cleanDiagnosis = (diagnosis || '').trim();
+    const cleanNotes = (clinicianNotes || '').trim();
+
+    if (!cleanDiagnosis) {
+      setErrorMsg('Primary clinical diagnosis is required before proceeding to medicines.');
+      return;
+    }
+
+    setSavingStep1(true);
+    try {
+      const updated = await updatePatientStatus(
+        'IN_CONSULTATION',
+        cleanDiagnosis,
+        cleanNotes,
+        { patient: selectedPatient, openOnly: false }
+      );
+
+      if (!updated || !updated.patient_id || updated.status !== 'IN_CONSULTATION') {
+        throw new Error('Consultation diagnosis and notes could not be verified by the server.');
+      }
+
+      setStep1SavedBanner(
+        `Saved Step 1 Diagnosis ("${updated.diagnosis}") & Consultation Notes for ${updated.patient_id}.`
+      );
+      setActiveStep(2);
+    } catch (err) {
+      console.error('Failed to save Step 1 diagnosis and notes:', err);
+      const detail =
+        err?.response?.data?.detail ||
+        err?.message ||
+        'Failed to save diagnosis and consultation notes. Please try again.';
+      setErrorMsg(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    } finally {
+      setSavingStep1(false);
+    }
+  };
 
   // Sync default medicines if empty
   useEffect(() => {
@@ -328,29 +416,54 @@ const DoctorConsultation = () => {
           </p>
         </div>
 
-        {/* Selected Patient Mini Card */}
-        {selectedPatient ? (
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs flex items-center gap-4">
-            <div>
-              <div className="text-[10px] font-bold text-slate-400 uppercase">Active Subject</div>
-              <div className="font-mono font-bold text-teal-800 text-sm">{selectedPatient.patient_id}</div>
-              <div className="text-slate-600 font-semibold">{selectedPatient.name}</div>
-            </div>
-            <div className="border-l border-slate-200 pl-3 space-y-0.5 text-slate-500">
+        {/* Selected Patient Mini Card & Inline Switcher */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs flex flex-col sm:flex-row sm:items-center gap-4">
+          <div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Active Subject</div>
+            {patientsList.length > 0 ? (
+              <select
+                value={selectedPatient?.patient_id || ''}
+                onChange={(e) => {
+                  const found = patientsList.find((p) => p.patient_id === e.target.value);
+                  if (found) {
+                    setSelectedPatient(found);
+                    if (searchParams.get('patient_id')) {
+                      setSearchParams({ patient_id: found.patient_id });
+                    }
+                  }
+                }}
+                className="font-mono font-bold text-teal-800 text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+              >
+                {patientsList.map((p) => (
+                  <option key={p.patient_id} value={p.patient_id}>
+                    {p.patient_id} — {p.name} ({p.age}y, {p.gender})
+                  </option>
+                ))}
+              </select>
+            ) : selectedPatient ? (
+              <div>
+                <div className="font-mono font-bold text-teal-800 text-sm">{selectedPatient.patient_id}</div>
+                <div className="text-slate-600 font-semibold">{selectedPatient.name}</div>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400">No active patient selected.</div>
+            )}
+          </div>
+          {selectedPatient && (
+            <div className="border-t sm:border-t-0 sm:border-l border-slate-200 pt-2 sm:pt-0 sm:pl-3 space-y-0.5 text-slate-500">
               <div>Age/Sex: <strong className="text-slate-800">{selectedPatient.age}y • {selectedPatient.gender}</strong></div>
               <div>Weight: <strong className="text-slate-800">{selectedPatient.weight} kg</strong></div>
               <div>DuBois BSA: <strong className="text-teal-700">{selectedPatient.bsa || '1.85'} m²</strong></div>
             </div>
-          </div>
-        ) : (
-          <div className="text-xs text-slate-400 p-2">No active patient selected.</div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Workflow Step Progress Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
         <div className="grid grid-cols-5 gap-2 text-xs text-center font-bold">
           <button
+            type="button"
             onClick={() => setActiveStep(1)}
             className={`py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${
               activeStep === 1
@@ -362,7 +475,15 @@ const DoctorConsultation = () => {
           </button>
 
           <button
-            onClick={() => setActiveStep(2)}
+            type="button"
+            onClick={() => {
+              if (activeStep === 1) {
+                handleSaveAndProceedToMedicines();
+              } else {
+                setActiveStep(2);
+              }
+            }}
+            disabled={savingStep1}
             className={`py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${
               activeStep === 2
                 ? 'bg-teal-600 text-white shadow-sm'
@@ -373,6 +494,7 @@ const DoctorConsultation = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveStep(3)}
             className={`py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${
               activeStep === 3
@@ -384,6 +506,7 @@ const DoctorConsultation = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveStep(4)}
             className={`py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${
               activeStep === 4
@@ -395,6 +518,7 @@ const DoctorConsultation = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveStep(5)}
             className={`py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${
               activeStep === 5
@@ -408,7 +532,10 @@ const DoctorConsultation = () => {
       </div>
 
       {errorMsg && (
-        <div className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+        <div
+          role="alert"
+          className="p-3.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2"
+        >
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <span>{errorMsg}</span>
         </div>
@@ -435,7 +562,10 @@ const DoctorConsultation = () => {
               <input
                 type="text"
                 value={diagnosis}
-                onChange={(e) => setDiagnosis(e.target.value)}
+                onChange={(e) => {
+                  setDiagnosis(e.target.value);
+                  if (errorMsg) setErrorMsg('');
+                }}
                 placeholder="e.g. Essential Hypertension, Type 2 Diabetes, Hyperlipidemia"
                 className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:outline-none text-xs"
               />
@@ -493,14 +623,22 @@ const DoctorConsultation = () => {
 
           <div className="flex justify-end pt-2">
             <button
-              onClick={async () => {
-                await updatePatientStatus('IN_CONSULTATION', diagnosis, clinicianNotes);
-                setActiveStep(2);
-              }}
-              className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold text-xs shadow-md hover:shadow-teal-500/20 flex items-center gap-2 transition"
+              type="button"
+              onClick={handleSaveAndProceedToMedicines}
+              disabled={savingStep1}
+              className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs shadow-md hover:shadow-teal-500/20 flex items-center gap-2 transition"
             >
-              <span>Save & Proceed to Medicines</span>
-              <ChevronRight className="w-4 h-4" />
+              {savingStep1 ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Saving Diagnosis &amp; Notes...</span>
+                </>
+              ) : (
+                <>
+                  <span>Save &amp; Proceed to Medicines</span>
+                  <ChevronRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -518,6 +656,26 @@ const DoctorConsultation = () => {
             </div>
             <span className="text-[11px] text-slate-500 font-mono">
               {currentMedicines.length} Medication(s) Prescribed
+            </span>
+          </div>
+
+          {/* Active Consultation Context Strip (Saved from Step 1) */}
+          <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-start gap-2 text-emerald-900">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold">
+                  {step1SavedBanner || `Step 1 Diagnosis Recorded: ${diagnosis || selectedPatient?.diagnosis || 'In Consultation'}`}
+                </div>
+                {clinicianNotes && (
+                  <div className="text-[11px] text-emerald-800 mt-0.5">
+                    Notes: {clinicianNotes}
+                  </div>
+                )}
+              </div>
+            </div>
+            <span className="text-[11px] font-mono font-bold text-teal-900 bg-white px-2.5 py-1 rounded border border-emerald-200 self-start sm:self-center">
+              Ref: {consultationContext?.consultation_id || selectedPatient?.consultation_id || `CON-${selectedPatient?.patient_id || 'ACTIVE'}`}
             </span>
           </div>
 

@@ -73,20 +73,32 @@ class PatientResponse(BaseModel):
     existing_medications: Optional[str] = None
     created_by: Optional[str] = None
     assigned_doctor_id: Optional[str] = None
-    status: str = "WAITING_FOR_DOCTOR"
+    status: Optional[str] = "WAITING_FOR_DOCTOR"
     diagnosis: Optional[str] = ""
     clinical_notes: Optional[str] = ""
     consultation_started_at: Optional[datetime.datetime] = None
     consultation_completed_at: Optional[datetime.datetime] = None
-    created_at: datetime.datetime
+    consultation_id: Optional[str] = None
+    consultation_ref: Optional[str] = None
+    doctor_id: Optional[str] = None
+    created_at: Optional[datetime.datetime] = None
 
     class Config:
         from_attributes = True
 
 class PatientStatusUpdate(BaseModel):
-    status: str = Field(..., description="Target status: WAITING_FOR_DOCTOR, IN_CONSULTATION, ANALYSIS_COMPLETE, PENDING_REVIEW, APPROVED, PRESCRIPTION_GENERATED")
-    diagnosis: Optional[str] = None
-    clinical_notes: Optional[str] = None
+    status: str = Field(
+        "IN_CONSULTATION",
+        description="Target status: WAITING_FOR_DOCTOR, IN_CONSULTATION, ANALYSIS_COMPLETE, PENDING_REVIEW, APPROVED, PRESCRIPTION_GENERATED"
+    )
+    diagnosis: Optional[str] = Field(None, description="Primary clinical diagnosis")
+    primary_diagnosis: Optional[str] = Field(None, description="Alias for primary clinical diagnosis")
+    clinical_notes: Optional[str] = Field(None, description="Clinical consultation notes and presenting symptoms")
+    consultation_notes: Optional[str] = Field(None, description="Alias for clinical consultation notes")
+    notes: Optional[str] = Field(None, description="Alias for clinical consultation notes")
+    doctor_id: Optional[str] = Field(None, description="Attending clinician System User ID")
+    consultation_id: Optional[str] = Field(None, description="Active consultation session reference")
+    open_only: Optional[bool] = Field(False, description="True when merely opening a patient from the queue prior to entering Step 1 diagnosis")
 
 # --- OCR & Scanning Schemas ---
 class PreprocessOptions(BaseModel):

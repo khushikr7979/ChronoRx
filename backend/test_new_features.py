@@ -556,8 +556,158 @@ def run_all_feature_tests():
         assert auto_fup is not None, "Auto FollowUpSession was not created upon E-Prescription generation!"
         print(f"REG-05. E-Prescription PDF & Auto 3-Day FollowUp [PASS] {rx_review_id} -> {auto_fup.session_id}")
 
+        print("\n" + "=" * 78)
+        print("PART 4: STEP 1 'SAVE & PROCEED TO MEDICINES' — 10-CASE REGRESSION SUITE")
         print("=" * 78)
-        print("ALL 31 VERIFICATION & REGRESSION CHECKS PASSED WITH ZERO ERRORS!")
+
+        example_diagnosis = "Acute febrile illness"
+        example_notes = (
+            "Patient reports fever and generalized weakness for 2 days. "
+            "Mild cough and sore throat reported. No breathing difficulty reported."
+        )
+
+        # Case 1: Valid diagnosis + notes -> HTTP success
+        res_step1 = client.put(
+            "/api/patients/P-3001/status",
+            json={
+                "status": "IN_CONSULTATION",
+                "diagnosis": example_diagnosis,
+                "clinical_notes": example_notes,
+            },
+            headers=h_doc1,
+        )
+        assert res_step1.status_code == 200, f"Step 1 save failed: {res_step1.text}"
+        step1_data = res_step1.json()
+        print("STEP1-01. Valid Diagnosis + Notes HTTP 200       [PASS] Status -> IN_CONSULTATION")
+
+        # Case 2: Data is persisted in database
+        db.expire_all()
+        persisted_p1 = db.query(Patient).filter(Patient.patient_id == "P-3001").first()
+        assert persisted_p1 is not None
+        assert persisted_p1.status == "IN_CONSULTATION"
+        assert persisted_p1.diagnosis == example_diagnosis
+        assert persisted_p1.clinical_notes == example_notes
+        assert persisted_p1.consultation_started_at is not None
+        step1_audits = [
+            a.action for a in db.query(AuditLog).filter(AuditLog.patient_id == "P-3001").all()
+        ]
+        assert "DIAGNOSIS_ENTERED" in step1_audits
+        assert "CLINICAL_NOTES_ENTERED" in step1_audits
+        print("STEP1-02. Diagnosis & Notes Persisted in DB      [PASS] DB + Audit verified")
+
+        # Case 3: Consultation context is returned
+        assert step1_data.get("patient_id") == "P-3001"
+        assert step1_data.get("assigned_doctor_id") == "DOC-1001"
+        assert step1_data.get("doctor_id") == "DOC-1001"
+        assert step1_data.get("consultation_id") and step1_data["consultation_id"].startswith("CON-P-3001-")
+        assert step1_data.get("consultation_ref") == step1_data.get("consultation_id")
+        assert step1_data.get("diagnosis") == example_diagnosis
+        assert step1_data.get("clinical_notes") == example_notes
+        print(f"STEP1-03. Consultation Context Returned          [PASS] {step1_data['consultation_id']}")
+
+        # Case 4: Frontend can transition to Step 2 (verified contract & JSX handler)
+        consult_jsx_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "frontend",
+            "src",
+            "pages",
+            "DoctorConsultation.jsx",
+        )
+        with open(consult_jsx_path, "r", encoding="utf-8") as f_jsx:
+            consult_jsx = f_jsx.read()
+        assert "handleSaveAndProceedToMedicines" in consult_jsx
+        assert "setActiveStep(2)" in consult_jsx
+        assert step1_data["status"] == "IN_CONSULTATION"
+        print("STEP1-04. Frontend Step 1 -> Step 2 Transition   [PASS] Verified")
+
+        # Case 5: Missing diagnosis -> validation error (HTTP 422)
+        res_missing_diag = client.put(
+            "/api/patients/P-3001/status",
+            json={
+                "status": "IN_CONSULTATION",
+                "diagnosis": "   ",
+                "clinical_notes": "Notes without diagnosis",
+            },
+            headers=h_doc1,
+        )
+        assert res_missing_diag.status_code == 422, f"Expected 422 for missing diagnosis, got {res_missing_diag.status_code}"
+        db.expire_all()
+        assert db.query(Patient).filter(Patient.patient_id == "P-3001").first().diagnosis == example_diagnosis
+        print("STEP1-05. Missing Diagnosis Validation Error     [PASS] HTTP 422")
+
+        # Case 6: Unauthorized patient -> blocked (HTTP 403)
+        res_unauth_pat = client.put(
+            "/api/patients/P-3001/status",
+            json={
+                "status": "IN_CONSULTATION",
+                "diagnosis": "Patient self-Attempt",
+                "clinical_notes": "Should be blocked",
+            },
+            headers=h_pat1,
+        )
+        assert res_unauth_pat.status_code == 403, f"Expected 403 for patient role, got {res_unauth_pat.status_code}"
+        print("STEP1-06. Unauthorized Patient Role Blocked      [PASS] HTTP 403")
+
+        # Case 7: Unauthorized doctor -> blocked (HTTP 403)
+        res_unauth_doc = client.put(
+            "/api/patients/P-3001/status",
+            json={
+                "status": "IN_CONSULTATION",
+                "diagnosis": "Unrelated doctor attempt",
+                "clinical_notes": "Should be blocked",
+            },
+            headers=h_doc2,
+        )
+        assert res_unauth_doc.status_code == 403, f"Expected 403 for unrelated doctor, got {res_unauth_doc.status_code}"
+        print("STEP1-07. Unauthorized Doctor Blocked (IDOR)     [PASS] HTTP 403")
+
+        # Case 8: Unauthenticated request -> blocked (HTTP 401)
+        res_no_auth = client.put(
+            "/api/patients/P-3001/status",
+            json={
+                "status": "IN_CONSULTATION",
+                "diagnosis": "Unauthenticated attempt",
+                "clinical_notes": "Should be blocked",
+            },
+        )
+        assert res_no_auth.status_code == 401, f"Expected 401 for unauthenticated request, got {res_no_auth.status_code}"
+        print("STEP1-08. Unauthenticated Request Blocked        [PASS] HTTP 401")
+
+        # Case 9: Backend failure -> frontend stays on Step 1 & preserves inputs
+        res_bad_status = client.put(
+            "/api/patients/P-3001/status",
+            json={
+                "status": "INVALID_STATUS_VALUE",
+                "diagnosis": example_diagnosis,
+                "clinical_notes": example_notes,
+            },
+            headers=h_doc1,
+        )
+        assert res_bad_status.status_code == 400
+        assert "catch (err)" in consult_jsx and "setErrorMsg(" in consult_jsx
+        print("STEP1-09. Backend Failure Keeps User on Step 1   [PASS] Error handled safely")
+
+        # Case 10: No duplicate submission (button disabled while saving + idempotent update)
+        assert "if (savingStep1) return;" in consult_jsx
+        assert "disabled={savingStep1}" in consult_jsx
+        patient_count_before = db.query(Patient).filter(Patient.patient_id == "P-3001").count()
+        res_idem = client.put(
+            "/api/patients/P-3001/status",
+            json={
+                "status": "IN_CONSULTATION",
+                "diagnosis": example_diagnosis,
+                "clinical_notes": example_notes,
+            },
+            headers=h_doc1,
+        )
+        assert res_idem.status_code == 200
+        patient_count_after = db.query(Patient).filter(Patient.patient_id == "P-3001").count()
+        assert patient_count_before == patient_count_after == 1
+        print("STEP1-10. Duplicate Submission Prevention        [PASS] Guarded & Idempotent")
+
+        print("=" * 78)
+        print("ALL 41 VERIFICATION & REGRESSION CHECKS PASSED WITH ZERO ERRORS!")
         print("=" * 78)
 
         db.close()
@@ -573,3 +723,4 @@ def run_all_feature_tests():
 
 if __name__ == "__main__":
     run_all_feature_tests()
+

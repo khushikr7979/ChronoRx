@@ -20,45 +20,106 @@ from app.services.dose_service import calculate_dubois_bsa, calculate_bmi
 # Initialize database schema
 Base.metadata.create_all(bind=engine)
 
-def migrate_sqlite_columns():
+def migrate_database_schema():
+    """
+    Ensures all required columns exist across both SQLite and PostgreSQL databases,
+    backfills NULL defaults on legacy rows, and synchronizes PostgreSQL serial sequences.
+    """
+    from sqlalchemy import inspect as sa_inspect, text
+
     try:
-        import sqlite3
-        if settings.DATABASE_URL.startswith("sqlite"):
-            db_path = settings.DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
-            if os.path.exists(db_path):
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                cursor.execute("PRAGMA table_info(prescription_reviews)")
-                cols = [r[1] for r in cursor.fetchall()]
-                if "status" not in cols:
-                    cursor.execute("ALTER TABLE prescription_reviews ADD COLUMN status VARCHAR(30) DEFAULT 'ACTIVE'")
-                if "archived_at" not in cols:
-                    cursor.execute("ALTER TABLE prescription_reviews ADD COLUMN archived_at TIMESTAMP")
-                if "archived_by" not in cols:
-                    cursor.execute("ALTER TABLE prescription_reviews ADD COLUMN archived_by VARCHAR(50)")
-                cursor.execute("PRAGMA table_info(users)")
-                u_cols = [r[1] for r in cursor.fetchall()]
-                if "patient_id" not in u_cols:
-                    cursor.execute("ALTER TABLE users ADD COLUMN patient_id VARCHAR(50)")
+        inspector = sa_inspect(engine)
+        existing_tables = set(inspector.get_table_names())
 
-                cursor.execute("PRAGMA table_info(followup_sessions)")
-                f_cols = [r[1] for r in cursor.fetchall()]
-                if f_cols and "consultation_ref" not in f_cols:
-                    cursor.execute("ALTER TABLE followup_sessions ADD COLUMN consultation_ref VARCHAR(80)")
+        alter_statements = []
 
-                cursor.execute("PRAGMA table_info(appointments)")
-                a_cols = [r[1] for r in cursor.fetchall()]
-                if a_cols:
-                    if "appointment_time" not in a_cols:
-                        cursor.execute("ALTER TABLE appointments ADD COLUMN appointment_time VARCHAR(30)")
-                    if "updated_at" not in a_cols:
-                        cursor.execute("ALTER TABLE appointments ADD COLUMN updated_at TIMESTAMP")
-                conn.commit()
-                conn.close()
+        if "patients" in existing_tables:
+            p_cols = {c["name"] for c in inspector.get_columns("patients")}
+            if "status" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN status VARCHAR(50) DEFAULT 'WAITING_FOR_DOCTOR'")
+            if "diagnosis" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN diagnosis TEXT DEFAULT ''")
+            if "clinical_notes" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN clinical_notes TEXT DEFAULT ''")
+            if "consultation_started_at" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN consultation_started_at TIMESTAMP")
+            if "consultation_completed_at" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN consultation_completed_at TIMESTAMP")
+            if "created_by" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN created_by VARCHAR(50)")
+            if "assigned_doctor_id" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN assigned_doctor_id VARCHAR(50)")
+            if "updated_at" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN updated_at TIMESTAMP")
+
+        if "prescription_reviews" in existing_tables:
+            pr_cols = {c["name"] for c in inspector.get_columns("prescription_reviews")}
+            if "status" not in pr_cols:
+                alter_statements.append("ALTER TABLE prescription_reviews ADD COLUMN status VARCHAR(30) DEFAULT 'ACTIVE'")
+            if "archived_at" not in pr_cols:
+                alter_statements.append("ALTER TABLE prescription_reviews ADD COLUMN archived_at TIMESTAMP")
+            if "archived_by" not in pr_cols:
+                alter_statements.append("ALTER TABLE prescription_reviews ADD COLUMN archived_by VARCHAR(50)")
+            if "archive_reason" not in pr_cols:
+                alter_statements.append("ALTER TABLE prescription_reviews ADD COLUMN archive_reason TEXT")
+
+        if "users" in existing_tables:
+            u_cols = {c["name"] for c in inspector.get_columns("users")}
+            if "patient_id" not in u_cols:
+                alter_statements.append("ALTER TABLE users ADD COLUMN patient_id VARCHAR(50)")
+
+        if "followup_sessions" in existing_tables:
+            f_cols = {c["name"] for c in inspector.get_columns("followup_sessions")}
+            if "consultation_ref" not in f_cols:
+                alter_statements.append("ALTER TABLE followup_sessions ADD COLUMN consultation_ref VARCHAR(80)")
+
+        if "appointments" in existing_tables:
+            a_cols = {c["name"] for c in inspector.get_columns("appointments")}
+            if "appointment_time" not in a_cols:
+                alter_statements.append("ALTER TABLE appointments ADD COLUMN appointment_time VARCHAR(30)")
+            if "updated_at" not in a_cols:
+                alter_statements.append("ALTER TABLE appointments ADD COLUMN updated_at TIMESTAMP")
+
+        with engine.begin() as conn:
+            for stmt in alter_statements:
+                conn.execute(text(stmt))
+
+            if "patients" in existing_tables:
+                conn.execute(text("UPDATE patients SET status = 'WAITING_FOR_DOCTOR' WHERE status IS NULL OR status = ''"))
+                conn.execute(text("UPDATE patients SET diagnosis = '' WHERE diagnosis IS NULL"))
+                conn.execute(text("UPDATE patients SET clinical_notes = '' WHERE clinical_notes IS NULL"))
+
+        # Synchronize PostgreSQL auto-increment serial sequences to prevent duplicate key errors after migrations
+        if "postgresql" in engine.dialect.name:
+            seq_tables = [
+                "users",
+                "patients",
+                "scan_records",
+                "medications",
+                "prescription_reviews",
+                "patient_history_entries",
+                "audit_logs",
+                "followup_sessions",
+                "followup_messages",
+                "appointments",
+            ]
+            for tbl in seq_tables:
+                if tbl in existing_tables:
+                    try:
+                        with engine.begin() as conn:
+                            max_id = conn.execute(text(f"SELECT COALESCE(MAX(id), 0) FROM {tbl}")).scalar() or 0
+                            seq_name = conn.execute(text(f"SELECT pg_get_serial_sequence('{tbl}', 'id')")).scalar()
+                            if seq_name:
+                                conn.execute(
+                                    text("SELECT setval(:seq, :val, :is_called)"),
+                                    {"seq": seq_name, "val": max(int(max_id), 1), "is_called": bool(max_id > 0)}
+                                )
+                    except Exception as seq_err:
+                        print(f"Sequence sync notice ({tbl}): {seq_err}")
     except Exception as e:
         print(f"Migration notice: {e}")
 
-migrate_sqlite_columns()
+migrate_database_schema()
 
 app = FastAPI(
     title="ChronoRx Tech API",

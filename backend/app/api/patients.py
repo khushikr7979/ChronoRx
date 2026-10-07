@@ -87,7 +87,36 @@ def create_patient(
         details=f"Patient {patient.patient_id} entered Doctor Queue with status WAITING_FOR_DOCTOR."
     )
 
+    return _attach_consultation_context(patient, current_user.user_id)
+
+
+def _attach_consultation_context(
+    patient: Patient,
+    fallback_doctor_id: Optional[str] = None,
+    explicit_consultation_id: Optional[str] = None
+) -> Patient:
+    """
+    Ensures safe non-null fields and attaches active consultation context identifiers
+    (consultation_id, consultation_ref, doctor_id) onto the ORM instance for serialization.
+    """
+    if not patient.status:
+        patient.status = "WAITING_FOR_DOCTOR"
+    if patient.diagnosis is None:
+        patient.diagnosis = ""
+    if patient.clinical_notes is None:
+        patient.clinical_notes = ""
+    if not patient.created_at:
+        patient.created_at = datetime.datetime.utcnow()
+
+    ref_time = patient.consultation_started_at or patient.created_at
+    ts_part = int(ref_time.timestamp()) if ref_time else 1001
+    c_ref = explicit_consultation_id or f"CON-{patient.patient_id}-{ts_part}"
+
+    patient.consultation_id = c_ref
+    patient.consultation_ref = c_ref
+    patient.doctor_id = patient.assigned_doctor_id or fallback_doctor_id
     return patient
+
 
 @router.get("/queue", response_model=List[PatientResponse])
 def get_doctor_queue(
@@ -116,11 +145,13 @@ def get_doctor_queue(
             or_(
                 Patient.assigned_doctor_id == current_user.user_id,
                 Patient.assigned_doctor_id == None,
-                Patient.status.in_(["WAITING_FOR_DOCTOR", "IN_CONSULTATION", "PENDING_REVIEW"])
+                Patient.assigned_doctor_id == "",
+                Patient.created_by == current_user.user_id
             )
         )
     
-    return query.order_by(Patient.id.desc()).all()
+    patients = query.order_by(Patient.id.desc()).all()
+    return [_attach_consultation_context(p, current_user.user_id) for p in patients]
 
 @router.get("", response_model=List[PatientResponse])
 def list_patients(
@@ -137,18 +168,28 @@ def list_patients(
     # Patients can ONLY ever see their own profile
     if current_user.role == "patient":
         query = query.filter(Patient.patient_id == current_user.patient_id)
-        return query.all()
+        return [_attach_consultation_context(p) for p in query.all()]
 
-    if my_only:
-        if current_user.role == "doctor":
+    # Doctors see patients assigned to them, unassigned patients, or patients they registered
+    if current_user.role == "doctor":
+        if my_only:
             query = query.filter(
                 or_(
                     Patient.assigned_doctor_id == current_user.user_id,
                     Patient.created_by == current_user.user_id
                 )
             )
-        elif current_user.role == "receptionist":
-            query = query.filter(Patient.created_by == current_user.user_id)
+        else:
+            query = query.filter(
+                or_(
+                    Patient.assigned_doctor_id == current_user.user_id,
+                    Patient.assigned_doctor_id == None,
+                    Patient.assigned_doctor_id == "",
+                    Patient.created_by == current_user.user_id
+                )
+            )
+    elif my_only and current_user.role == "receptionist":
+        query = query.filter(Patient.created_by == current_user.user_id)
 
     if status_filter:
         query = query.filter(Patient.status == status_filter.upper())
@@ -163,7 +204,7 @@ def list_patients(
         )
 
     patients = query.order_by(Patient.id.desc()).offset(skip).limit(limit).all()
-    return patients
+    return [_attach_consultation_context(p, current_user.user_id if current_user.role == "doctor" else None) for p in patients]
 
 @router.get("/{patient_id}", response_model=PatientResponse)
 def get_patient(
@@ -189,7 +230,7 @@ def get_patient(
         action="PATIENT_ACCESSED",
         details=f"Clinical demographics accessed for patient {patient_id} by {current_user.user_id}"
     )
-    return patient
+    return _attach_consultation_context(patient, current_user.user_id if current_user.role == "doctor" else None)
 
 @router.put("/{patient_id}/status", response_model=PatientResponse)
 def update_patient_status(
@@ -201,83 +242,134 @@ def update_patient_status(
     """
     Tier 2 Doctor Consultation Status Transition:
     WAITING_FOR_DOCTOR -> IN_CONSULTATION -> ANALYSIS_COMPLETE -> PENDING_REVIEW -> APPROVED -> PRESCRIPTION_GENERATED
-    Also updates clinical notes and primary diagnosis.
+    Saves primary clinical diagnosis and consultation notes, enforces RBAC and doctor ownership,
+    and returns the active consultation context for Step 2 (Medicines & Posology).
     """
-    # Patients cannot modify clinical status
+    # 1. RBAC: Patients cannot modify clinical status or diagnosis
     if current_user.role == "patient":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access forbidden: Patients cannot modify clinical consultation status."
         )
-    new_status = payload.status.upper()
+
+    new_status = (payload.status or "IN_CONSULTATION").strip().upper()
     if new_status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid status '{payload.status}'. Allowed: {', '.join(VALID_STATUSES)}"
         )
 
+    # 2. Verify patient exists
     patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail=f"Patient with ID '{patient_id}' not found")
 
-    # Receptionist cannot transition into clinical consultation or approve prescription
-    if current_user.role == "receptionist" and new_status in ["IN_CONSULTATION", "ANALYSIS_COMPLETE", "APPROVED", "PRESCRIPTION_GENERATED"]:
+    # 3. RBAC: Receptionist cannot transition into clinical consultation or approve prescription
+    if current_user.role == "receptionist" and new_status in ["IN_CONSULTATION", "ANALYSIS_COMPLETE", "PENDING_REVIEW", "APPROVED", "PRESCRIPTION_GENERATED"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access forbidden: Receptionist cannot transition patient into clinical status '{new_status}'."
         )
 
+    # 4. Doctor Authorization & Patient Ownership check
+    if current_user.role == "doctor":
+        if payload.doctor_id and payload.doctor_id.strip() and payload.doctor_id.strip().upper() != current_user.user_id.upper():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: Doctor ID mismatch with authenticated clinician."
+            )
+        if (
+            patient.assigned_doctor_id
+            and patient.assigned_doctor_id.strip() != ""
+            and patient.assigned_doctor_id.strip().upper() != current_user.user_id.upper()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access forbidden: Patient {patient_id} is assigned to clinician {patient.assigned_doctor_id}. Unauthorized doctor cannot modify this consultation."
+            )
+
+    # 5. Resolve diagnosis and consultation notes fields (supporting aliases)
+    raw_diagnosis = payload.diagnosis if payload.diagnosis is not None else payload.primary_diagnosis
+    raw_notes = (
+        payload.clinical_notes
+        if payload.clinical_notes is not None
+        else (payload.consultation_notes if payload.consultation_notes is not None else payload.notes)
+    )
+
+    # 6. Validate required diagnosis when saving Step 1 consultation (unless open_only=True)
+    if new_status == "IN_CONSULTATION" and not payload.open_only:
+        clean_diagnosis = (raw_diagnosis or "").strip()
+        if not clean_diagnosis:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Primary clinical diagnosis is required before proceeding to medicines."
+            )
+
     old_status = patient.status
     patient.status = new_status
+    now_utc = datetime.datetime.utcnow()
 
-    # If doctor opens patient for consultation
-    if new_status == "IN_CONSULTATION" and old_status != "IN_CONSULTATION":
+    audit_events = []
+
+    # 7. Handle consultation start and doctor assignment
+    if new_status == "IN_CONSULTATION":
         if not patient.consultation_started_at:
-            patient.consultation_started_at = datetime.datetime.utcnow()
-        if current_user.role == "doctor":
+            patient.consultation_started_at = now_utc
+        if current_user.role == "doctor" and not patient.assigned_doctor_id:
             patient.assigned_doctor_id = current_user.user_id
-        log_audit_event(
-            db,
-            patient_id=patient_id,
-            user_id=current_user.user_id,
-            action="DOCTOR_OPENED_PATIENT",
-            details=f"Doctor {current_user.user_id} ({current_user.full_name}) opened patient {patient_id} for consultation."
-        )
+        if old_status != "IN_CONSULTATION":
+            audit_events.append((
+                "DOCTOR_OPENED_PATIENT",
+                f"Doctor {current_user.user_id} ({current_user.full_name}) opened patient {patient_id} for consultation."
+            ))
 
-    # Update diagnosis if provided
-    if payload.diagnosis is not None and payload.diagnosis.strip():
-        patient.diagnosis = payload.diagnosis.strip()
-        log_audit_event(
-            db,
-            patient_id=patient_id,
-            user_id=current_user.user_id,
-            action="DIAGNOSIS_ENTERED",
-            details=f"Primary diagnosis entered for patient {patient_id}."
-        )
+    # 8. Persist diagnosis if provided
+    if raw_diagnosis is not None and raw_diagnosis.strip():
+        patient.diagnosis = raw_diagnosis.strip()
+        audit_events.append((
+            "DIAGNOSIS_ENTERED",
+            f"Primary diagnosis entered for patient {patient_id}: {patient.diagnosis}"
+        ))
 
-    # Update clinical notes if provided
-    if payload.clinical_notes is not None:
-        patient.clinical_notes = payload.clinical_notes.strip()
-        log_audit_event(
-            db,
-            patient_id=patient_id,
-            user_id=current_user.user_id,
-            action="CLINICAL_NOTES_ENTERED",
-            details=f"Clinical symptoms/notes recorded for patient {patient_id}."
-        )
+    # 9. Persist clinical notes if provided
+    if raw_notes is not None:
+        patient.clinical_notes = raw_notes.strip()
+        if patient.clinical_notes or not payload.open_only:
+            audit_events.append((
+                "CLINICAL_NOTES_ENTERED",
+                f"Clinical symptoms/notes recorded for patient {patient_id}."
+            ))
 
     if new_status == "APPROVED":
+        audit_events.append((
+            "SCHEDULE_APPROVED",
+            f"Clinician {current_user.user_id} approved medication timetable and clinical orders."
+        ))
+
+    if new_status == "PRESCRIPTION_GENERATED":
+        patient.consultation_completed_at = now_utc
+
+    patient.updated_at = now_utc
+    if not patient.created_at:
+        patient.created_at = now_utc
+
+    # Commit patient update atomically
+    db.commit()
+    db.refresh(patient)
+
+    # Record audit events
+    for action_name, action_details in audit_events:
         log_audit_event(
             db,
             patient_id=patient_id,
             user_id=current_user.user_id,
-            action="SCHEDULE_APPROVED",
-            details=f"Clinician {current_user.user_id} approved medication timetable and clinical orders."
+            action=action_name,
+            details=action_details
         )
 
-    if new_status == "PRESCRIPTION_GENERATED":
-        patient.consultation_completed_at = datetime.datetime.utcnow()
+    return _attach_consultation_context(
+        patient,
+        fallback_doctor_id=current_user.user_id if current_user.role == "doctor" else None,
+        explicit_consultation_id=payload.consultation_id
+    )
 
-    db.commit()
-    db.refresh(patient)
-    return patient
