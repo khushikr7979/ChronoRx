@@ -1,4 +1,6 @@
 import os
+import json
+import datetime
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +15,11 @@ from app.models.models import (
     FollowUpSession,
     FollowUpMessage,
     Appointment,
+    SubscriptionPlan,
+    UserSubscription,
+    PaymentTransaction,
+    TranslationVerification,
+    TranslationFeedback,
 )
 from app.security.auth_handler import get_password_hash
 from app.services.dose_service import calculate_dubois_bsa, calculate_bmi
@@ -51,6 +58,8 @@ def migrate_database_schema():
                 alter_statements.append("ALTER TABLE patients ADD COLUMN assigned_doctor_id VARCHAR(50)")
             if "updated_at" not in p_cols:
                 alter_statements.append("ALTER TABLE patients ADD COLUMN updated_at TIMESTAMP")
+            if "preferred_language" not in p_cols:
+                alter_statements.append("ALTER TABLE patients ADD COLUMN preferred_language VARCHAR(20) DEFAULT 'en'")
 
         if "prescription_reviews" in existing_tables:
             pr_cols = {c["name"] for c in inspector.get_columns("prescription_reviews")}
@@ -69,6 +78,8 @@ def migrate_database_schema():
                 alter_statements.append("ALTER TABLE users ADD COLUMN patient_id VARCHAR(50)")
             if "profile_photo" not in u_cols:
                 alter_statements.append("ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255)")
+            if "preferred_language" not in u_cols:
+                alter_statements.append("ALTER TABLE users ADD COLUMN preferred_language VARCHAR(20) DEFAULT 'en'")
 
         if "followup_sessions" in existing_tables:
             f_cols = {c["name"] for c in inspector.get_columns("followup_sessions")}
@@ -90,6 +101,10 @@ def migrate_database_schema():
                 conn.execute(text("UPDATE patients SET status = 'WAITING_FOR_DOCTOR' WHERE status IS NULL OR status = ''"))
                 conn.execute(text("UPDATE patients SET diagnosis = '' WHERE diagnosis IS NULL"))
                 conn.execute(text("UPDATE patients SET clinical_notes = '' WHERE clinical_notes IS NULL"))
+                conn.execute(text("UPDATE patients SET preferred_language = 'en' WHERE preferred_language IS NULL OR preferred_language = ''"))
+
+            if "users" in existing_tables:
+                conn.execute(text("UPDATE users SET preferred_language = 'en' WHERE preferred_language IS NULL OR preferred_language = ''"))
 
         # Synchronize PostgreSQL auto-increment serial sequences to prevent duplicate key errors after migrations
         if "postgresql" in engine.dialect.name:
@@ -104,6 +119,11 @@ def migrate_database_schema():
                 "followup_sessions",
                 "followup_messages",
                 "appointments",
+                "subscription_plans",
+                "user_subscriptions",
+                "payment_transactions",
+                "translation_verifications",
+                "translation_feedbacks",
             ]
             for tbl in seq_tables:
                 if tbl in existing_tables:
@@ -258,6 +278,155 @@ def seed_default_demo_data():
                 )
                 db.add(pat_user)
                 db.commit()
+
+        # 4. Seed Standard Subscription Plans if none exist
+        if db.query(SubscriptionPlan).count() == 0:
+            default_plans = [
+                SubscriptionPlan(
+                    plan_id="plan_doctor_monthly",
+                    role="doctor",
+                    name="Doctor Clinical Suite (Monthly)",
+                    description="Full clinical consultation, posology calculator, chronopharmacology timetable, DDI safety checks, OCR scanning, and 3-day patient follow-up.",
+                    billing_cycle="monthly",
+                    price_inr=999,
+                    features=json.dumps([
+                        "Unlimited Clinical Consultations",
+                        "AI-Assisted Posology & BSA/BMI Engine",
+                        "Multi-Drug Interaction & Food Safety Checks",
+                        "Chronopharmacology Smart Timetable",
+                        "Prescription OCR & Scan Extraction",
+                        "Digital PDF Rx with Clinic Watermark",
+                        "3-Day Secure Patient-Doctor Follow-up",
+                        "22 Indian Languages Medical Instructions"
+                    ]),
+                    is_active=True
+                ),
+                SubscriptionPlan(
+                    plan_id="plan_doctor_yearly",
+                    role="doctor",
+                    name="Doctor Clinical Suite (Annual)",
+                    description="Full clinical consultation suite with 2 months free savings, priority clinical AI queue, and advanced analytics.",
+                    billing_cycle="yearly",
+                    price_inr=9999,
+                    features=json.dumps([
+                        "All Doctor Monthly Features",
+                        "2 Months Free (Save ₹1,989/yr)",
+                        "Priority Clinical AI Queue",
+                        "Audit Trail & Compliance Archive",
+                        "22 Indian Languages Medical Instructions"
+                    ]),
+                    is_active=True
+                ),
+                SubscriptionPlan(
+                    plan_id="plan_receptionist_monthly",
+                    role="receptionist",
+                    name="Intake & Desk Suite (Monthly)",
+                    description="Complete patient registration, vitals intake, consultation queue management, and appointment QR check-in.",
+                    billing_cycle="monthly",
+                    price_inr=299,
+                    features=json.dumps([
+                        "Patient Registration & Vitals Intake",
+                        "Real-time Clinic Queue Management",
+                        "Appointment Scheduling & Slot Booking",
+                        "QR Code Instant Counter Check-in",
+                        "Prescription Document Uploads"
+                    ]),
+                    is_active=True
+                ),
+                SubscriptionPlan(
+                    plan_id="plan_receptionist_yearly",
+                    role="receptionist",
+                    name="Intake & Desk Suite (Annual)",
+                    description="Annual intake suite with 2 months free savings and clinic multi-counter support.",
+                    billing_cycle="yearly",
+                    price_inr=2999,
+                    features=json.dumps([
+                        "All Receptionist Monthly Features",
+                        "2 Months Free (Save ₹589/yr)",
+                        "Multi-Counter Queue Management",
+                        "Appointment History & Reports"
+                    ]),
+                    is_active=True
+                ),
+                SubscriptionPlan(
+                    plan_id="plan_admin_monthly",
+                    role="admin",
+                    name="Healthcare Admin Suite (Monthly)",
+                    description="Complete system administration, clinical staff management, plan configuration, security audit logs, and analytics.",
+                    billing_cycle="monthly",
+                    price_inr=1499,
+                    features=json.dumps([
+                        "System User & Staff Provisioning",
+                        "Role-Based Access Control (RBAC) Management",
+                        "Subscription & Billing Plan Configuration",
+                        "Security Audit Trail & Compliance Logs",
+                        "Clinic Operational Metrics & Analytics"
+                    ]),
+                    is_active=True
+                ),
+                SubscriptionPlan(
+                    plan_id="plan_admin_yearly",
+                    role="admin",
+                    name="Healthcare Admin Suite (Annual)",
+                    description="Annual healthcare admin suite with 2 months free savings and unlimited system audit archive.",
+                    billing_cycle="yearly",
+                    price_inr=14999,
+                    features=json.dumps([
+                        "All Admin Monthly Features",
+                        "2 Months Free (Save ₹2,989/yr)",
+                        "Unlimited Compliance & Audit Archive",
+                        "Enterprise Multi-Clinician Management"
+                    ]),
+                    is_active=True
+                ),
+                SubscriptionPlan(
+                    plan_id="plan_patient_free",
+                    role="patient",
+                    name="Patient Portal (100% Free Forever)",
+                    description="Patients never pay. Access prescriptions, timetables in 22 Indian languages, doctor follow-ups, and appointment booking.",
+                    billing_cycle="free",
+                    price_inr=0,
+                    features=json.dumps([
+                        "100% Free Forever — Zero Patient Charges",
+                        "View Active & Past Prescriptions",
+                        "Digital Medication Timetable & Reminders",
+                        "Instructions in 22 Indian Languages",
+                        "3-Day Free Doctor Follow-Up Messaging",
+                        "Book Appointments & Receive QR Receipts"
+                    ]),
+                    is_active=True
+                )
+            ]
+            db.add_all(default_plans)
+            db.commit()
+
+        # 5. Seed Active Subscriptions for Staff Users and Free Subscription for Patient
+        staff_seed_data = [
+            ("DOC-1001", "doctor", "plan_doctor_yearly", 9999, "yearly"),
+            ("REC-1001", "receptionist", "plan_receptionist_yearly", 2999, "yearly"),
+            ("ADM-1001", "admin", "plan_admin_yearly", 14999, "yearly"),
+            ("PAT-1001", "patient", "plan_patient_free", 0, "free"),
+        ]
+        for uid, role, pid, price, cycle in staff_seed_data:
+            existing_sub = db.query(UserSubscription).filter(UserSubscription.user_id == uid).first()
+            if not existing_sub:
+                sub_status = "FREE" if role == "patient" else "ACTIVE"
+                end_dt = None if role == "patient" else (datetime.datetime.utcnow() + datetime.timedelta(days=365))
+                new_sub = UserSubscription(
+                    subscription_id=f"SUB-{uid}-SEED",
+                    user_id=uid,
+                    role=role,
+                    plan_id=pid,
+                    billing_cycle=cycle,
+                    price_inr=price,
+                    status=sub_status,
+                    start_date=datetime.datetime.utcnow(),
+                    end_date=end_dt,
+                    auto_renew=True if role != "patient" else False,
+                    payment_method="SYSTEM_SEED"
+                )
+                db.add(new_sub)
+        db.commit()
 
     finally:
         db.close()

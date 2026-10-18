@@ -69,3 +69,6 @@ def require_roles(allowed_roles: List[str]):
             )
         return current_user
     return role_checker
+
+# Standard alias
+get_current_active_user = get_current_user

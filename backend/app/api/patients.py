@@ -57,6 +57,7 @@ def create_patient(
         gender=patient_in.gender,
         bsa=bsa_val,
         bmi=bmi_val,
+        preferred_language=patient_in.preferred_language or "en",
         medical_history=patient_in.medical_history or "None reported",
         allergies=patient_in.allergies or "None known",
         existing_medications=patient_in.existing_medications or "None",

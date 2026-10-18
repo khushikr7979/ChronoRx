@@ -393,6 +393,77 @@ export const appointmentAPI = {
   },
 };
 
+// --- Multilingual Translation Endpoints ---
+export const translationAPI = {
+  getLanguages: async () => {
+    const res = await api.get('/translations/languages');
+    return res.data;
+  },
+  translate: async (text, targetLanguage, preserveMedicalTerms = true) => {
+    const res = await api.post('/translations/translate', {
+      text,
+      target_language: targetLanguage,
+      preserve_medical_terms: preserveMedicalTerms,
+    });
+    return res.data;
+  },
+  translateInstructions: async (data) => {
+    const res = await api.post('/translations/instructions', data);
+    return res.data;
+  },
+  verifyTranslation: async (data) => {
+    const res = await api.post('/translations/verify', data);
+    return res.data;
+  },
+  submitFeedback: async (data) => {
+    const res = await api.post('/translations/feedback', data);
+    return res.data;
+  },
+  updatePatientLanguage: async (patientId, preferredLanguage) => {
+    const res = await api.put(`/translations/patient-language/${patientId}`, {
+      preferred_language: preferredLanguage,
+    });
+    return res.data;
+  },
+};
+
+// --- Subscription & Billing Endpoints ---
+export const subscriptionAPI = {
+  getPlans: async (role = null) => {
+    const res = await api.get('/subscriptions/plans', {
+      params: role ? { role } : {},
+    });
+    return res.data;
+  },
+  getStatus: async () => {
+    const res = await api.get('/subscriptions/status');
+    return res.data;
+  },
+  checkout: async (planId, billingCycle = null) => {
+    const res = await api.post('/subscriptions/checkout', {
+      plan_id: planId,
+      billing_cycle: billingCycle,
+    });
+    return res.data;
+  },
+  verifyPayment: async (data) => {
+    const res = await api.post('/subscriptions/verify-payment', data);
+    return res.data;
+  },
+  getHistory: async () => {
+    const res = await api.get('/subscriptions/history');
+    return res.data;
+  },
+  adminUpdatePlan: async (planId, data) => {
+    const res = await api.post(`/subscriptions/admin/plans/${planId}`, data);
+    return res.data;
+  },
+  adminGetAll: async () => {
+    const res = await api.get('/subscriptions/admin/all');
+    return res.data;
+  },
+};
+
 // --- Audit & Dashboard Endpoints ---
 export const auditAPI = {
   getPatientAudit: async (patientId) => {
@@ -410,4 +481,5 @@ export const auditAPI = {
 };
 
 export default api;
+
 

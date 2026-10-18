@@ -16,6 +16,10 @@ Comprehensive automated test suite for ChronoRx Tech Final Production Upgrade:
 import os
 import tempfile
 import datetime
+import uuid
+import json
+import hmac
+import hashlib
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -29,6 +33,11 @@ from app.models.models import (
     FollowUpSession,
     FollowUpMessage,
     Appointment,
+    SubscriptionPlan,
+    UserSubscription,
+    PaymentTransaction,
+    TranslationVerification,
+    TranslationFeedback,
 )
 from app.security.auth_handler import get_password_hash
 
@@ -146,6 +155,100 @@ def run_all_feature_tests():
             is_active=True,
         )
         db.add_all([doc1, doc2, rec1, adm1, p1, p2, pat_user1, pat_user2])
+        db.commit()
+
+        # Seed Subscription Plans for test DB
+        import json as test_json
+        plans_to_seed = [
+            SubscriptionPlan(
+                plan_id="plan_doctor_monthly",
+                role="doctor",
+                name="Doctor Clinical Suite (Monthly)",
+                description="Clinical consultations, posology, DDI checks, timetable, OCR.",
+                billing_cycle="monthly",
+                price_inr=999,
+                features=test_json.dumps(["Clinical Consultations", "Posology Calculator", "22 Indian Languages"]),
+                is_active=True,
+            ),
+            SubscriptionPlan(
+                plan_id="plan_doctor_yearly",
+                role="doctor",
+                name="Doctor Clinical Suite (Annual)",
+                description="Annual clinical consultations with 2 months free savings.",
+                billing_cycle="yearly",
+                price_inr=9999,
+                features=test_json.dumps(["All Monthly Features", "2 Months Free", "22 Indian Languages"]),
+                is_active=True,
+            ),
+            SubscriptionPlan(
+                plan_id="plan_receptionist_monthly",
+                role="receptionist",
+                name="Intake Suite (Monthly)",
+                description="Registration, queue management, QR booking.",
+                billing_cycle="monthly",
+                price_inr=299,
+                features=test_json.dumps(["Intake Registration", "Clinic Queue", "QR Booking"]),
+                is_active=True,
+            ),
+            SubscriptionPlan(
+                plan_id="plan_receptionist_yearly",
+                role="receptionist",
+                name="Intake Suite (Annual)",
+                description="Annual intake suite.",
+                billing_cycle="yearly",
+                price_inr=2999,
+                features=test_json.dumps(["All Monthly Features", "2 Months Free"]),
+                is_active=True,
+            ),
+            SubscriptionPlan(
+                plan_id="plan_admin_monthly",
+                role="admin",
+                name="Admin Suite (Monthly)",
+                description="User provisioning, audit trail, plan management.",
+                billing_cycle="monthly",
+                price_inr=1499,
+                features=test_json.dumps(["User Management", "Audit Trail", "Plan Configuration"]),
+                is_active=True,
+            ),
+            SubscriptionPlan(
+                plan_id="plan_admin_yearly",
+                role="admin",
+                name="Admin Suite (Annual)",
+                description="Annual admin suite.",
+                billing_cycle="yearly",
+                price_inr=14999,
+                features=test_json.dumps(["All Monthly Features", "Enterprise Audit Archive"]),
+                is_active=True,
+            ),
+            SubscriptionPlan(
+                plan_id="plan_patient_free",
+                role="patient",
+                name="Patient Portal (100% Free Forever)",
+                description="100% Free Forever. Access prescriptions and timetables.",
+                billing_cycle="free",
+                price_inr=0,
+                features=test_json.dumps(["Free Forever", "Prescriptions", "22 Languages"]),
+                is_active=True,
+            ),
+        ]
+        db.add_all(plans_to_seed)
+        db.commit()
+
+        # Seed active subscription for DOC-2002 to test verified clinician flow while DOC-1001 tests subscription purchase
+        sub_doc2 = UserSubscription(
+            subscription_id="SUB-DOC-2002-INIT",
+            user_id="DOC-2002",
+            role="doctor",
+            plan_id="plan_doctor_yearly",
+            billing_cycle="yearly",
+            price_inr=9999,
+            status="ACTIVE",
+            start_date=datetime.datetime.utcnow(),
+            end_date=datetime.datetime.utcnow() + datetime.timedelta(days=365),
+            auto_renew=True,
+            payment_method="SYSTEM_TEST"
+        )
+        db.add(sub_doc2)
         db.commit()
 
         def login(identifier, password):
@@ -961,8 +1064,539 @@ def run_all_feature_tests():
         assert client.get("/profile/PAT-3002", headers=h_pat1).status_code == 403
         print("PROF-14. Existing Patient IDOR Protection Intact [PASS]")
 
+        # =====================================================================
+        # PART 6: MULTILINGUAL PATIENT INSTRUCTIONS (12 MANDATORY TESTS)
+        # =====================================================================
+        print("\n" + "=" * 78)
+        print("PART 6: MULTILINGUAL PATIENT INSTRUCTIONS (12 TESTS)")
         print("=" * 78)
-        print("ALL 55 VERIFICATION & REGRESSION CHECKS PASSED WITH ZERO ERRORS!")
+
+        # M-01: List all 22 Eighth Schedule Indian Languages + English Reference (GET /translations/languages)
+        res_langs = client.get("/translations/languages")
+        assert res_langs.status_code == 200, res_langs.text
+        langs = res_langs.json()
+        assert len(langs) == 23, f"Expected 23 language entries (22 scheduled + English reference), got {len(langs)}"
+        scheduled_langs = [l for l in langs if l.get("is_scheduled_language")]
+        assert len(scheduled_langs) == 22, f"Expected 22 scheduled languages, got {len(scheduled_langs)}"
+        lang_codes = [l["code"] for l in langs]
+        for required_code in [
+            "as", "bn", "brx", "doi", "gu", "hi", "kn", "ks", "kok", "mai",
+            "ml", "mni", "mr", "ne", "or", "pa", "sa", "sat", "sd", "ta", "te", "ur"
+        ]:
+            assert required_code in lang_codes, f"Missing Eighth Schedule language code: {required_code}"
+        assert "en" in lang_codes
+        print("M-01. List All 22 Indian Languages              [PASS] 22/22 scheduled languages + English returned")
+
+        # M-02: Drug name preservation (POST /translations/translate)
+        res_tr_drug = client.post(
+            "/translations/translate",
+            json={
+                "text": "Metformin 500mg BID with meals",
+                "target_language": "hi",
+                "preserve_medical_terms": True,
+            },
+            headers=h_doc1,
+        )
+        assert res_tr_drug.status_code == 200, res_tr_drug.text
+        tr_drug_data = res_tr_drug.json()
+        assert "Metformin" in tr_drug_data["translated_text"], f"Metformin drug name was corrupted: {tr_drug_data['translated_text']}"
+        assert "500mg" in tr_drug_data["translated_text"] or "500" in tr_drug_data["translated_text"]
+        print("M-02. Drug Name & Strength Preservation          [PASS] 'Metformin 500mg' preserved in Hindi")
+
+        # M-03: Dosage & Unit preservation
+        res_tr_dose = client.post(
+            "/translations/translate",
+            json={
+                "text": "Take 10ml syrup twice daily",
+                "target_language": "bn",
+                "preserve_medical_terms": True,
+            },
+            headers=h_doc1,
+        )
+        assert res_tr_dose.status_code == 200, res_tr_dose.text
+        tr_dose_data = res_tr_dose.json()
+        assert "10ml" in tr_dose_data["translated_text"] or "10 ml" in tr_dose_data["translated_text"]
+        print("M-03. Dosage & Unit Preservation (10ml)          [PASS] '10ml' preserved in Bengali")
+
+        # M-04: High-frequency clinical phrases across multiple languages
+        for target_lang in ["hi", "bn", "ta", "te", "mr", "gu"]:
+            res_phrase = client.post(
+                "/translations/translate",
+                json={
+                    "text": "Take after meals",
+                    "target_language": target_lang,
+                },
+                headers=h_doc1,
+            )
+            assert res_phrase.status_code == 200
+            assert len(res_phrase.json()["translated_text"]) > 0
+        print("M-04. High-Frequency Clinical Phrase Coverage    [PASS] Hindi, Bengali, Tamil, Telugu, Marathi, Gujarati")
+
+        # M-05: RTL direction indicator for Urdu and Sindhi
+        res_ur = client.post(
+            "/translations/translate",
+            json={"text": "Take once daily", "target_language": "ur"},
+            headers=h_doc1,
+        )
+        assert res_ur.status_code == 200
+        assert res_ur.json()["direction"] == "rtl"
+
+        res_sd = client.post(
+            "/translations/translate",
+            json={"text": "Take once daily", "target_language": "sd"},
+            headers=h_doc1,
+        )
+        assert res_sd.status_code == 200
+        assert res_sd.json()["direction"] == "rtl"
+        print("M-05. RTL Reading Direction Detection            [PASS] Urdu and Sindhi direction='rtl'")
+
+        # M-06: Clinician verification by Doctor (POST /translations/verify)
+        # M-06a: Unpaid doctor blocked from protected clinical verification (HTTP 402)
+        res_unpaid_verify = client.post(
+            "/translations/verify",
+            json={
+                "original_text": "Take 1 tablet after dinner",
+                "target_language": "hi",
+                "translated_text": "रात के खाने के बाद 1 गोली लें",
+                "status": "Clinician-Verified",
+            },
+            headers=h_doc1,
+        )
+        assert res_unpaid_verify.status_code == 402, res_unpaid_verify.text
+        assert "subscription required" in res_unpaid_verify.json()["detail"].lower()
+
+        # M-06b: Subscribed doctor successfully verifies translation (HTTP 200)
+        res_verify_doc = client.post(
+            "/translations/verify",
+            json={
+                "original_text": "Take 1 tablet after dinner",
+                "target_language": "hi",
+                "translated_text": "रात के खाने के बाद 1 गोली लें",
+                "status": "Clinician-Verified",
+                "notes": "Reviewed and approved by Dr. Jenkins",
+            },
+            headers=h_doc2,
+        )
+        assert res_verify_doc.status_code == 200, res_verify_doc.text
+        ver_data = res_verify_doc.json()
+        assert ver_data["verification_id"].startswith("TVER-")
+        assert ver_data["status"] == "Clinician-Verified"
+        assert ver_data["verified_by"] == "DOC-2002"
+        audit_trans = db.query(AuditLog).filter(AuditLog.action == "TRANSLATION_VERIFIED").first()
+        assert audit_trans is not None
+        print(f"M-06. Clinician Verification by Doctor           [PASS] {ver_data['verification_id']} saved with audit log (Unpaid 402 verified)")
+
+        # M-07: Clinician verification RBAC (Patient blocked with HTTP 403)
+        res_verify_pat = client.post(
+            "/translations/verify",
+            json={
+                "original_text": "Take 1 tablet after dinner",
+                "target_language": "hi",
+                "translated_text": "रात के खाने के बाद 1 गोली लें",
+            },
+            headers=h_pat1,
+        )
+        assert res_verify_pat.status_code == 403
+        print("M-07. Clinician Verification RBAC (Patient 403)  [PASS] Non-clinician blocked")
+
+        # M-08: Clinician-verified retrieval takes precedence over machine translation
+        res_tr_verified = client.post(
+            "/translations/translate",
+            json={
+                "text": "Take 1 tablet after dinner",
+                "target_language": "hi",
+            },
+            headers=h_pat1,
+        )
+        assert res_tr_verified.status_code == 200
+        assert res_tr_verified.json()["status"] == "Clinician-Verified"
+        assert res_tr_verified.json()["is_verified"] is True
+        assert res_tr_verified.json()["translated_text"] == "रात के खाने के बाद 1 गोली लें"
+        print("M-08. Clinician-Verified Precedence              [PASS] Returns verified translation with badge")
+
+        # M-09: Translation feedback submission (POST /translations/feedback)
+        res_fb = client.post(
+            "/translations/feedback",
+            json={
+                "target_language": "hi",
+                "original_text": "Take with breakfast",
+                "reported_text": "नाश्ते के साथ लें",
+                "issue_description": "Clarify whether light breakfast is required",
+            },
+            headers=h_pat1,
+        )
+        assert res_fb.status_code == 200, res_fb.text
+        fb_data = res_fb.json()
+        assert fb_data["feedback_id"].startswith("TFB-")
+        assert fb_data["status"] == "OPEN"
+        print(f"M-09. Translation Feedback Submission            [PASS] {fb_data['feedback_id']} logged")
+
+        # M-10: Patient mother tongue update (PUT /translations/patient-language/P-3001)
+        res_lang_update = client.put(
+            "/translations/patient-language/P-3001",
+            json={"preferred_language": "hi"},
+            headers=h_pat1,
+        )
+        assert res_lang_update.status_code == 200, res_lang_update.text
+        db.expire_all()
+        pat_p1 = db.query(Patient).filter(Patient.patient_id == "P-3001").first()
+        assert pat_p1.preferred_language == "hi"
+        usr_p1 = db.query(User).filter(User.user_id == "PAT-3001").first()
+        assert usr_p1.preferred_language == "hi"
+        print("M-10. Patient Mother Tongue Profile Update       [PASS] P-3001 & PAT-3001 updated to Hindi")
+
+        # M-11: Patient mother tongue IDOR protection (PAT-3001 blocked from updating P-3002)
+        res_lang_idor = client.put(
+            "/translations/patient-language/P-3002",
+            json={"preferred_language": "ta"},
+            headers=h_pat1,
+        )
+        assert res_lang_idor.status_code == 403
+        print("M-11. Patient Mother Tongue IDOR Protection      [PASS] HTTP 403 Forbidden")
+
+        # M-12: Batch prescription instructions translation (POST /translations/instructions)
+        res_batch = client.post(
+            "/translations/instructions",
+            json={
+                "instructions": [
+                    "Take Metformin 500mg with breakfast",
+                    "Take Atorvastatin 20mg at bedtime"
+                ],
+                "target_language": "hi",
+                "medication_items": [
+                    {"name": "Metformin", "dosage": "500mg", "instructions": "Take with food"}
+                ]
+            },
+            headers=h_pat1,
+        )
+        assert res_batch.status_code == 200, res_batch.text
+        batch_data = res_batch.json()
+        assert len(batch_data["translated_instructions"]) == 2
+        assert "disclaimer" in batch_data
+        assert "Metformin" in batch_data["translated_instructions"][0]
+        assert "Atorvastatin" in batch_data["translated_instructions"][1]
+        print("M-12. Batch Prescription Instructions Translated [PASS] 2/2 instructions + disclaimer verified")
+
+        # M-13: Unsupported translation returns original English with Translation Unavailable status (Safety Guarantee)
+        res_unsupp = client.post(
+            "/translations/translate",
+            json={
+                "text": "Completely unknown medical clinical phrase without dictionary or NLP match xyz123",
+                "target_language": "hi",
+            },
+            headers=h_doc2,
+        )
+        assert res_unsupp.status_code == 200
+        unsupp_data = res_unsupp.json()
+        assert unsupp_data["status"] == "Translation Unavailable"
+        assert unsupp_data["is_verified"] is False
+        assert "xyz123" in unsupp_data["translated_text"]
+        assert "disclaimer" in unsupp_data
+        print("M-13. Translation Safety Fallback Verified       [PASS] Status 'Translation Unavailable' & English preserved")
+
+        # =====================================================================
+        # PART 7: ROLE-BASED SUBSCRIPTIONS & BILLING (15 MANDATORY TESTS)
+        # =====================================================================
+        print("\n" + "=" * 78)
+        print("PART 7: ROLE-BASED SUBSCRIPTIONS & BILLING (15 TESTS)")
+        print("=" * 78)
+
+        # S-01: Doctor plans listing (GET /subscriptions/plans with doctor token)
+        res_doc_plans = client.get("/subscriptions/plans", headers=h_doc1)
+        assert res_doc_plans.status_code == 200, res_doc_plans.text
+        doc_plans = res_doc_plans.json()
+        doc_plan_ids = {p["plan_id"]: p["price_inr"] for p in doc_plans}
+        assert "plan_doctor_monthly" in doc_plan_ids and doc_plan_ids["plan_doctor_monthly"] == 999
+        assert "plan_doctor_yearly" in doc_plan_ids and doc_plan_ids["plan_doctor_yearly"] == 9999
+        print("S-01. Doctor Subscription Plans (INR 999 / INR 9,999) [PASS] Monthly & Annual verified")
+
+        # S-02: Receptionist plans listing (GET /subscriptions/plans with receptionist token)
+        res_rec_plans = client.get("/subscriptions/plans", headers=h_rec1)
+        assert res_rec_plans.status_code == 200, res_rec_plans.text
+        rec_plans = res_rec_plans.json()
+        rec_plan_ids = {p["plan_id"]: p["price_inr"] for p in rec_plans}
+        assert "plan_receptionist_monthly" in rec_plan_ids and rec_plan_ids["plan_receptionist_monthly"] == 299
+        assert "plan_receptionist_yearly" in rec_plan_ids and rec_plan_ids["plan_receptionist_yearly"] == 2999
+        print("S-02. Receptionist Plans (INR 299 / INR 2,999)       [PASS] Monthly & Annual verified")
+
+        # S-03: Admin plans listing (GET /subscriptions/plans with admin token)
+        res_adm_plans = client.get("/subscriptions/plans", headers=h_adm1)
+        assert res_adm_plans.status_code == 200, res_adm_plans.text
+        adm_plans = res_adm_plans.json()
+        adm_plan_ids = {p["plan_id"]: p["price_inr"] for p in adm_plans}
+        assert "plan_admin_monthly" in adm_plan_ids and adm_plan_ids["plan_admin_monthly"] == 1499
+        assert "plan_admin_yearly" in adm_plan_ids and adm_plan_ids["plan_admin_yearly"] == 14999
+        print("S-03. Admin Plans (INR 1,499 / INR 14,999)            [PASS] Monthly & Annual verified")
+
+        # S-04: Patient Free Forever plan
+        res_pat_plans = client.get("/subscriptions/plans", headers=h_pat1)
+        assert res_pat_plans.status_code == 200, res_pat_plans.text
+        pat_plans = res_pat_plans.json()
+        assert len(pat_plans) == 1
+        assert pat_plans[0]["price_inr"] == 0
+        assert pat_plans[0]["billing_cycle"] == "free"
+        print("S-04. Patient 100% Free Forever Plan (INR 0)       [PASS] Zero charges guaranteed")
+
+        # S-05: Patient subscription status (GET /subscriptions/status)
+        res_pat_status = client.get("/subscriptions/status", headers=h_pat1)
+        assert res_pat_status.status_code == 200, res_pat_status.text
+        pat_status = res_pat_status.json()
+        assert pat_status["is_free_tier"] is True
+        assert pat_status["status"] == "FREE"
+        assert pat_status["is_subscribed"] is True
+        print("S-05. Patient Subscription Status               [PASS] is_free_tier=True, status=FREE")
+
+        # S-06: Patient checkout attempt strictly blocked (HTTP 400)
+        res_pat_checkout = client.post(
+            "/subscriptions/checkout",
+            json={"plan_id": "plan_patient_free", "billing_cycle": "free"},
+            headers=h_pat1,
+        )
+        assert res_pat_checkout.status_code == 400
+        assert "100% Free Forever" in res_pat_checkout.json()["detail"]
+        print("S-06. Patient Checkout Attempt Blocked (400)     [PASS] Zero billing friction enforced")
+
+        # S-07: Doctor checkout order generation
+        res_doc_order = client.post(
+            "/subscriptions/checkout",
+            json={"plan_id": "plan_doctor_monthly", "billing_cycle": "monthly"},
+            headers=h_doc1,
+        )
+        assert res_doc_order.status_code == 200, res_doc_order.text
+        doc_order = res_doc_order.json()
+        assert "order_id" in doc_order
+        assert doc_order["amount_inr"] == 999
+        assert doc_order["amount_paise"] == 99900
+        assert doc_order["currency"] == "INR"
+        order_id_doc = doc_order["order_id"]
+        print(f"S-07. Doctor Checkout Order Generated            [PASS] {order_id_doc} for INR 999")
+
+        # S-08: Receptionist checkout order generation
+        res_rec_order = client.post(
+            "/subscriptions/checkout",
+            json={"plan_id": "plan_receptionist_monthly", "billing_cycle": "monthly"},
+            headers=h_rec1,
+        )
+        assert res_rec_order.status_code == 200, res_rec_order.text
+        rec_order = res_rec_order.json()
+        assert rec_order["amount_inr"] == 299
+        assert rec_order["amount_paise"] == 29900
+        print(f"S-08. Receptionist Checkout Order Generated      [PASS] {rec_order['order_id']} for INR 299")
+
+        # S-09: Cross-role plan checkout blocked (HTTP 403)
+        res_cross_role = client.post(
+            "/subscriptions/checkout",
+            json={"plan_id": "plan_doctor_monthly", "billing_cycle": "monthly"},
+            headers=h_rec1,
+        )
+        assert res_cross_role.status_code == 403
+        print("S-09. Cross-Role Plan Checkout Blocked (403)     [PASS] Receptionist blocked from doctor plan")
+
+        # S-10: Payment signature verification and activation
+        mock_payment_id = f"pay_{uuid.uuid4().hex[:14]}"
+        mock_signature = f"sig_mock_{uuid.uuid4().hex[:20]}"
+        res_verify_pay = client.post(
+            "/subscriptions/verify-payment",
+            json={
+                "order_id": order_id_doc,
+                "payment_id": mock_payment_id,
+                "signature": mock_signature,
+                "plan_id": "plan_doctor_monthly",
+            },
+            headers=h_doc1,
+        )
+        assert res_verify_pay.status_code == 200, res_verify_pay.text
+        pay_result = res_verify_pay.json()
+        assert pay_result["success"] is True
+        assert pay_result["status"] == "ACTIVE"
+        assert pay_result["subscription_id"].startswith("SUB-")
+        print(f"S-10. Payment Signature Verified & Activated     [PASS] Sub: {pay_result['subscription_id']}")
+
+        # S-11: Payment Security Hardening: Fake orders, tampered signatures, IDOR, and replay prevention
+        # S-11a: Fake uninitiated order rejected (HTTP 400)
+        res_fake_order = client.post(
+            "/subscriptions/verify-payment",
+            json={
+                "order_id": f"order_fake_{uuid.uuid4().hex[:12]}",
+                "payment_id": "pay_fake_unauthorized",
+                "signature": "completely_invalid_tampered_signature",
+                "plan_id": "plan_doctor_monthly",
+            },
+            headers=h_doc1,
+        )
+        assert res_fake_order.status_code == 400
+
+        # S-11b: Tampered signature on a real initiated order rejected (HTTP 400)
+        res_real_order = client.post(
+            "/subscriptions/checkout",
+            json={"plan_id": "plan_doctor_monthly", "billing_cycle": "monthly"},
+            headers=h_doc1,
+        )
+        assert res_real_order.status_code == 200
+        real_unpaid_order_id = res_real_order.json()["order_id"]
+        res_tampered_sig = client.post(
+            "/subscriptions/verify-payment",
+            json={
+                "order_id": real_unpaid_order_id,
+                "payment_id": "pay_tampered_attempt",
+                "signature": "forged_signature_xyz_123",
+                "plan_id": "plan_doctor_monthly",
+            },
+            headers=h_doc1,
+        )
+        assert res_tampered_sig.status_code == 400
+
+        # S-11c: Cross-user order verification attempt blocked (HTTP 400 IDOR)
+        res_cross_user_order = client.post(
+            "/subscriptions/verify-payment",
+            json={
+                "order_id": real_unpaid_order_id,
+                "payment_id": "pay_mock_cross_user",
+                "signature": f"sig_mock_{real_unpaid_order_id}_cross",
+                "plan_id": "plan_doctor_monthly",
+            },
+            headers=h_doc2,
+        )
+        assert res_cross_user_order.status_code == 400
+        assert "mismatch" in res_cross_user_order.json()["detail"].lower()
+
+        # S-11d: Replay attack prevention: already completed order cannot be reused (HTTP 400)
+        res_replay_pay = client.post(
+            "/subscriptions/verify-payment",
+            json={
+                "order_id": order_id_doc,
+                "payment_id": mock_payment_id,
+                "signature": mock_signature,
+                "plan_id": "plan_doctor_monthly",
+            },
+            headers=h_doc1,
+        )
+        assert res_replay_pay.status_code == 400
+        assert "already been completed" in res_replay_pay.json()["detail"].lower()
+        print("S-11. Payment Security & Tamper Protection       [PASS] Fake, tampered, IDOR & replay attacks blocked")
+
+        # S-12: Subscription status & active duration
+        res_doc_status = client.get("/subscriptions/status", headers=h_doc1)
+        assert res_doc_status.status_code == 200, res_doc_status.text
+        doc_stat = res_doc_status.json()
+        assert doc_stat["is_subscribed"] is True
+        assert doc_stat["status"] == "ACTIVE"
+        assert doc_stat["plan_id"] == "plan_doctor_monthly"
+        assert doc_stat["end_date"] is not None
+        print("S-12. Active Subscription Status & Duration      [PASS] Status ACTIVE with valid end_date")
+
+        # S-13: Payment transaction history retrieval
+        res_hist = client.get("/subscriptions/history", headers=h_doc1)
+        assert res_hist.status_code == 200, res_hist.text
+        hist = res_hist.json()
+        assert len(hist) >= 1
+        success_txns = [t for t in hist if t["status"] == "SUCCESS"]
+        assert len(success_txns) >= 1
+        assert success_txns[0]["amount_inr"] == 999
+        assert any(t["status"] == "FAILED" for t in hist)
+        print("S-13. Payment Transaction History Retrieved       [PASS] Both SUCCESS and audit FAILED records present")
+
+        # S-14: Admin plan update (POST /subscriptions/admin/plans/{plan_id})
+        # Doctor role blocked
+        res_doc_up_plan = client.post(
+            "/subscriptions/admin/plans/plan_doctor_monthly",
+            json={"price_inr": 1099},
+            headers=h_doc1,
+        )
+        assert res_doc_up_plan.status_code == 403
+
+        # Admin role allowed
+        res_adm_up_plan = client.post(
+            "/subscriptions/admin/plans/plan_doctor_monthly",
+            json={"price_inr": 1099},
+            headers=h_adm1,
+        )
+        assert res_adm_up_plan.status_code == 200, res_adm_up_plan.text
+        assert res_adm_up_plan.json()["price_inr"] == 1099
+
+        # Revert back to 999
+        client.post(
+            "/subscriptions/admin/plans/plan_doctor_monthly",
+            json={"price_inr": 999},
+            headers=h_adm1,
+        )
+        plan_audit = db.query(AuditLog).filter(AuditLog.action == "PLAN_UPDATED").first()
+        assert plan_audit is not None
+        print("S-14. Admin Plan Configuration & Audit Trail     [PASS] RBAC enforced, audit logged")
+
+        # S-15: Admin view all subscriptions (GET /subscriptions/admin/all)
+        # Doctor role blocked
+        assert client.get("/subscriptions/admin/all", headers=h_doc1).status_code == 403
+        # Patient role blocked
+        assert client.get("/subscriptions/admin/all", headers=h_pat1).status_code == 403
+        # Admin allowed
+        res_adm_all_subs = client.get("/subscriptions/admin/all", headers=h_adm1)
+        assert res_adm_all_subs.status_code == 200, res_adm_all_subs.text
+        all_subs = res_adm_all_subs.json()
+        assert len(all_subs) >= 1
+        print("S-15. Admin Clinic-Wide Subscriptions Directory  [PASS] All subscriptions listed with RBAC")
+
+        # S-16: Razorpay Webhook Processing, Secret Verification, and Idempotency Protection
+        # S-16a: Invalid or missing webhook signature rejected (HTTP 400)
+        res_bad_wh = client.post(
+            "/subscriptions/webhook",
+            json={"event": "order.paid"},
+            headers={"X-Razorpay-Signature": "invalid_sig_123"}
+        )
+        assert res_bad_wh.status_code == 400
+
+        # S-16b: Valid Webhook with order.paid activates subscription and updates transaction
+        # Create an uncompleted order for doc2
+        res_doc2_order = client.post(
+            "/subscriptions/checkout",
+            json={"plan_id": "plan_doctor_yearly", "billing_cycle": "yearly"},
+            headers=h_doc2,
+        )
+        assert res_doc2_order.status_code == 200
+        doc2_wh_order_id = res_doc2_order.json()["order_id"]
+
+        wh_payload = {
+            "event": "order.paid",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": "pay_webhook_test_99",
+                        "order_id": doc2_wh_order_id,
+                        "amount": 999900,
+                        "currency": "INR",
+                        "status": "captured"
+                    }
+                }
+            }
+        }
+        wh_bytes = json.dumps(wh_payload).encode("utf-8")
+        from app.config import settings as test_settings
+        orig_wh_secret = test_settings.RAZORPAY_WEBHOOK_SECRET
+        try:
+            test_settings.RAZORPAY_WEBHOOK_SECRET = "whsec_test_secret_chronorx"
+            test_wh_sig = hmac.new(b"whsec_test_secret_chronorx", wh_bytes, hashlib.sha256).hexdigest()
+            res_good_wh = client.post(
+                "/subscriptions/webhook",
+                content=wh_bytes,
+                headers={"X-Razorpay-Signature": test_wh_sig, "Content-Type": "application/json"}
+            )
+            assert res_good_wh.status_code == 200, res_good_wh.text
+            assert res_good_wh.json()["status"] == "ok"
+
+            # S-16c: Idempotency / Duplicate Webhook: Replaying already-processed webhook returns 200 without duplicate action
+            res_dup_wh = client.post(
+                "/subscriptions/webhook",
+                content=wh_bytes,
+                headers={"X-Razorpay-Signature": test_wh_sig, "Content-Type": "application/json"}
+            )
+            assert res_dup_wh.status_code == 200
+            assert "idempotent" in res_dup_wh.json()["message"].lower()
+        finally:
+            test_settings.RAZORPAY_WEBHOOK_SECRET = orig_wh_secret
+        print("S-16. Webhook Verification & Anti-Replay Idempotency [PASS] Verified with HMAC secret & replay guard")
+
+        print("=" * 78)
+        print("ALL 84 VERIFICATION & REGRESSION CHECKS PASSED WITH ZERO ERRORS!")
         print("=" * 78)
 
         db.close()

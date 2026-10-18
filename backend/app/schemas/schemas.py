@@ -25,6 +25,7 @@ class UserResponse(BaseModel):
     role: str
     patient_id: Optional[str] = None
     profile_photo: Optional[str] = None
+    preferred_language: Optional[str] = "en"
     is_active: bool
     created_at: datetime.datetime
 
@@ -40,6 +41,7 @@ class ProfileResponse(BaseModel):
     user_id: str
     patient_id: Optional[str] = None
     profile_photo: Optional[str] = None
+    preferred_language: Optional[str] = "en"
     has_photo: bool = False
     default_avatar: bool = True
     initials: str = "U"
@@ -66,6 +68,7 @@ class PatientCreate(BaseModel):
     weight: float = Field(..., gt=0, lt=500, description="Weight in kg")
     height: float = Field(..., gt=0, lt=300, description="Height in cm")
     gender: str = Field(..., description="Male, Female, or Other")
+    preferred_language: Optional[str] = "en"
     medical_history: Optional[str] = "None reported"
     allergies: Optional[str] = "None known"
     existing_medications: Optional[str] = "None"
@@ -83,6 +86,7 @@ class PatientResponse(BaseModel):
     weight: float
     height: float
     gender: str
+    preferred_language: Optional[str] = "en"
     bsa: Optional[float] = None
     bmi: Optional[float] = None
     medical_history: Optional[str] = None
@@ -628,5 +632,194 @@ class QRVerifyResponse(BaseModel):
     verified_by: Optional[str] = None
     message: str
     pii_exposed_in_qr: bool = False
+
+# --- Multilingual Translation Schemas ---
+class LanguageInfo(BaseModel):
+    code: str
+    name: str
+    native_name: str
+    script: str
+    direction: str = "ltr"  # "ltr" or "rtl"
+    is_scheduled_language: bool = True
+
+class TranslationRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    target_language: str = Field(..., description="Language code (e.g., hi, bn, ta, etc.)")
+    source_language: Optional[str] = "en"
+    preserve_medical_terms: Optional[bool] = True
+
+class TranslationResponse(BaseModel):
+    original_text: str
+    translated_text: str
+    target_language: str
+    source_language: str
+    status: str  # Machine-Translated, Clinician-Verified, Translation Unavailable, Review Required
+    is_verified: bool = False
+    direction: str = "ltr"
+    preserved_terms: List[str] = []
+    engine: str = "ChronoRx-Clinical-NLP-v1"
+    disclaimer: str = "Machine translation for patient convenience. Clinical diagnosis and dosing must be verified with your clinician."
+
+class InstructionItem(BaseModel):
+    drug_name: str
+    dosage: Optional[str] = ""
+    frequency: Optional[str] = ""
+    route: Optional[str] = "Oral"
+    timing: Optional[str] = ""
+    food_relation: Optional[str] = ""
+    instructions: str
+    warnings: Optional[str] = ""
+
+class InstructionsTranslationRequest(BaseModel):
+    patient_id: Optional[str] = None
+    target_language: str
+    instructions: List[str] = []
+    medication_items: Optional[List[Dict[str, Any]]] = []
+
+class InstructionsTranslationResponse(BaseModel):
+    target_language: str
+    language_name: str
+    direction: str = "ltr"
+    original_instructions: List[str] = []
+    translated_instructions: List[str] = []
+    translated_medications: List[Dict[str, Any]] = []
+    status: str = "Machine-Translated"
+    verification_status: str = "Machine-Translated"
+    is_verified: bool = False
+    verified_by: Optional[str] = None
+    disclaimer: str = "Original clinician-approved English instructions remain the authoritative legal medical reference."
+
+class TranslationVerifyRequest(BaseModel):
+    original_text: str
+    translated_text: str
+    target_language: str
+    status: Optional[str] = "Clinician-Verified"
+    notes: Optional[str] = None
+
+class TranslationVerifyResponse(BaseModel):
+    verification_id: str
+    status: str
+    target_language: str
+    verified_by: str
+    verified_at: datetime.datetime
+    message: str
+
+class TranslationFeedbackRequest(BaseModel):
+    target_language: str
+    original_text: str
+    reported_text: Optional[str] = None
+    issue_description: str
+
+class TranslationFeedbackResponse(BaseModel):
+    feedback_id: str
+    status: str
+    message: str
+    created_at: datetime.datetime
+
+class PatientLanguageUpdateRequest(BaseModel):
+    preferred_language: str = Field(..., min_length=2, max_length=20)
+
+# --- Subscription & Billing Schemas ---
+class SubscriptionPlanResponse(BaseModel):
+    id: int
+    plan_id: str
+    role: str
+    name: str
+    description: str
+    billing_cycle: str
+    price_inr: int
+    features: List[str] = []
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+class SubscriptionPlanUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price_inr: Optional[int] = None
+    features: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+class UserSubscriptionResponse(BaseModel):
+    id: int
+    subscription_id: str
+    user_id: str
+    role: str
+    plan_id: str
+    plan_name: Optional[str] = None
+    billing_cycle: str
+    price_inr: int
+    status: str  # FREE, ACTIVE, PENDING, EXPIRED, CANCELLED
+    start_date: datetime.datetime
+    end_date: Optional[datetime.datetime] = None
+    auto_renew: bool = False
+    payment_method: str = "MANUAL"
+    is_free_forever: bool = False
+    days_remaining: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class CheckoutOrderRequest(BaseModel):
+    plan_id: str
+    billing_cycle: Optional[str] = None  # monthly or yearly
+
+class CheckoutOrderResponse(BaseModel):
+    order_id: str
+    amount_inr: int
+    amount_paise: int
+    currency: str = "INR"
+    key_id: str
+    plan_id: str
+    plan_name: str
+    role: str
+    billing_cycle: str
+    provider: str  # "razorpay" or "mock"
+    notes: Dict[str, Any] = {}
+
+class PaymentVerifyRequest(BaseModel):
+    order_id: str
+    payment_id: str
+    signature: str
+    plan_id: str
+
+class PaymentVerifyResponse(BaseModel):
+    success: bool
+    status: str
+    message: str
+    subscription_id: Optional[str] = None
+    subscription: Optional[UserSubscriptionResponse] = None
+
+class PaymentTransactionResponse(BaseModel):
+    id: int
+    transaction_id: str
+    user_id: str
+    subscription_id: Optional[str] = None
+    plan_id: str
+    amount_inr: int
+    currency: str
+    gateway: str
+    gateway_order_id: Optional[str] = None
+    gateway_payment_id: Optional[str] = None
+    status: str
+    created_at: datetime.datetime
+    verified_at: Optional[datetime.datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class SubscriptionStatusResponse(BaseModel):
+    is_subscribed: bool
+    is_free_tier: bool
+    role: str
+    plan_id: Optional[str] = None
+    plan_name: Optional[str] = None
+    status: str
+    billing_cycle: Optional[str] = None
+    end_date: Optional[datetime.datetime] = None
+    features: List[str] = []
+    message: str
+
 
 

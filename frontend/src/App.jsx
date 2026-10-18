@@ -21,6 +21,7 @@ import PDFPrescription from './pages/PDFPrescription';
 import DoctorConsultation from './pages/DoctorConsultation';
 import SettingsAudit from './pages/SettingsAudit';
 import ClinicOperations from './pages/ClinicOperations';
+import SubscriptionBilling from './pages/SubscriptionBilling';
 
 const ProtectedLayout = ({ children, allowedRoles = null }) => {
   const { isAuthenticated, loading, user } = useAuth();
@@ -204,6 +205,22 @@ function App() {
               element={
                 <ProtectedLayout allowedRoles={['doctor', 'receptionist', 'admin']}>
                   <SettingsAudit />
+                </ProtectedLayout>
+              }
+            />
+            <Route
+              path="/billing"
+              element={
+                <ProtectedLayout>
+                  <SubscriptionBilling />
+                </ProtectedLayout>
+              }
+            />
+            <Route
+              path="/subscriptions"
+              element={
+                <ProtectedLayout>
+                  <SubscriptionBilling />
                 </ProtectedLayout>
               }
             />

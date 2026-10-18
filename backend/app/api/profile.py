@@ -83,6 +83,7 @@ def build_profile_response(user: User) -> ProfileResponse:
         user_id=user.user_id,
         patient_id=user.patient_id,
         profile_photo=photo_url,
+        preferred_language=getattr(user, "preferred_language", "en") or "en",
         has_photo=bool(photo_url),
         default_avatar=not bool(photo_url),
         initials=compute_user_initials(user.full_name),

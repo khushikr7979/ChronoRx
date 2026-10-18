@@ -14,6 +14,7 @@ class User(Base):
     role = Column(String(20), default="doctor", nullable=False)  # doctor, receptionist, admin, patient
     patient_id = Column(String(50), nullable=True, index=True)   # Linked patient profile ID (e.g. P-1001)
     profile_photo = Column(String(255), nullable=True, default=None)  # Secure relative path/URL to profile photo
+    preferred_language = Column(String(20), default="en", nullable=False)  # ISO/Eighth Schedule code (en, hi, bn, etc.)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -34,6 +35,8 @@ class Patient(Base):
     gender = Column(String(20), nullable=False)
     bsa = Column(Float, nullable=True)      # calculated DuBois Body Surface Area (m^2)
     bmi = Column(Float, nullable=True)      # calculated BMI (kg/m^2)
+
+    preferred_language = Column(String(20), default="en", nullable=False)  # Preferred Mother Tongue (22 Indian languages)
 
     medical_history = Column(Text, default="None reported")
     allergies = Column(Text, default="None known")
@@ -208,6 +211,88 @@ class Appointment(Base):
     created_by = Column(String(50), nullable=False, default="SYSTEM")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class SubscriptionPlan(Base):
+    __tablename__ = "subscription_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan_id = Column(String(50), unique=True, index=True, nullable=False)  # plan_doctor_monthly, plan_patient_free
+    role = Column(String(20), index=True, nullable=False)  # doctor, receptionist, admin, patient
+    name = Column(String(100), nullable=False)
+    description = Column(Text, default="")
+    billing_cycle = Column(String(20), default="monthly", nullable=False)  # monthly, yearly, free
+    price_inr = Column(Integer, default=0, nullable=False)  # In whole INR
+    features = Column(Text, default="[]")  # JSON string list of feature descriptions
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class UserSubscription(Base):
+    __tablename__ = "user_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    subscription_id = Column(String(50), unique=True, index=True, nullable=False)  # e.g. SUB-DOC1001-XXXX
+    user_id = Column(String(50), index=True, nullable=False)  # System User ID (e.g. DOC-1001)
+    role = Column(String(20), nullable=False)
+    plan_id = Column(String(50), index=True, nullable=False)
+    billing_cycle = Column(String(20), default="monthly", nullable=False)
+    price_inr = Column(Integer, default=0, nullable=False)
+    status = Column(String(30), default="ACTIVE", index=True)  # FREE, ACTIVE, PENDING, EXPIRED, CANCELLED, PAYMENT_FAILED
+    start_date = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    end_date = Column(DateTime, nullable=True)  # Null for free forever
+    cancelled_at = Column(DateTime, nullable=True)
+    auto_renew = Column(Boolean, default=False)
+    payment_method = Column(String(50), default="MANUAL")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class PaymentTransaction(Base):
+    __tablename__ = "payment_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_id = Column(String(60), unique=True, index=True, nullable=False)  # e.g. TXN-XXXX
+    user_id = Column(String(50), index=True, nullable=False)
+    subscription_id = Column(String(50), nullable=True, index=True)
+    plan_id = Column(String(50), nullable=False)
+    amount_inr = Column(Integer, nullable=False)
+    currency = Column(String(10), default="INR")
+    gateway = Column(String(30), default="razorpay")  # razorpay, mock
+    gateway_order_id = Column(String(100), nullable=True, index=True)
+    gateway_payment_id = Column(String(100), nullable=True, index=True)
+    gateway_signature = Column(String(255), nullable=True)
+    status = Column(String(30), default="INITIATED", index=True)  # INITIATED, SUCCESS, FAILED, PENDING
+    idempotency_key = Column(String(100), unique=True, nullable=True, index=True)
+    details = Column(Text, default="{}")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    verified_at = Column(DateTime, nullable=True)
+
+class TranslationVerification(Base):
+    __tablename__ = "translation_verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    verification_id = Column(String(50), unique=True, index=True, nullable=False)
+    content_hash = Column(String(64), index=True, nullable=False)  # SHA256 of original text + language
+    target_language = Column(String(20), index=True, nullable=False)
+    original_text = Column(Text, nullable=False)
+    translated_text = Column(Text, nullable=False)
+    status = Column(String(30), default="Clinician-Verified", index=True)  # Clinician-Verified, Review Required
+    verified_by = Column(String(50), index=True, nullable=False)  # Doctor User ID (DOC-1001)
+    verified_by_name = Column(String(100), nullable=False)
+    verified_at = Column(DateTime, default=datetime.datetime.utcnow)
+    notes = Column(Text, nullable=True)
+
+class TranslationFeedback(Base):
+    __tablename__ = "translation_feedbacks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    feedback_id = Column(String(50), unique=True, index=True, nullable=False)
+    user_id = Column(String(50), index=True, nullable=False)
+    target_language = Column(String(20), index=True, nullable=False)
+    original_text = Column(Text, nullable=False)
+    reported_text = Column(Text, nullable=True)
+    issue_description = Column(Text, nullable=False)
+    status = Column(String(30), default="OPEN", index=True)  # OPEN, RESOLVED, DISMISSED
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 

@@ -25,6 +25,8 @@ export default defineConfig({
       '/patient-history': 'http://127.0.0.1:8000',
       '/followups': 'http://127.0.0.1:8000',
       '/appointments': 'http://127.0.0.1:8000',
+      '/translations': 'http://127.0.0.1:8000',
+      '/subscriptions': 'http://127.0.0.1:8000',
       '/dashboard': 'http://127.0.0.1:8000',
       '/uploads': 'http://127.0.0.1:8000',
       '/reports': 'http://127.0.0.1:8000',

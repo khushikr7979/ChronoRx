@@ -6,7 +6,8 @@ import {
   scheduleAPI,
   historyAPI,
   followupAPI,
-  appointmentAPI
+  appointmentAPI,
+  translationAPI,
 } from '../services/api';
 import {
   User,
@@ -30,10 +31,13 @@ import {
   AlertTriangle,
   ShieldCheck,
   Printer,
-  XCircle
+  XCircle,
+  Globe,
+  Languages,
 } from 'lucide-react';
 import MedicalDisclaimer from '../components/MedicalDisclaimer';
 import { UserProfileCard, UserAvatar } from '../components/UserProfileCard';
+import LanguageSelector, { INDIAN_LANGUAGES_FALLBACK } from '../components/LanguageSelector';
 
 const PatientDashboard = () => {
   const { user, logout } = useAuth();
@@ -46,6 +50,15 @@ const PatientDashboard = () => {
   const [scheduleData, setScheduleData] = useState(null);
   const [historyEntries, setHistoryEntries] = useState([]);
   const [downloadingId, setDownloadingId] = useState(null);
+
+  // --- Feature 3: Multilingual Patient Instructions State ---
+  const [preferredLanguage, setPreferredLanguage] = useState('en');
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [translatedCache, setTranslatedCache] = useState({});
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [feedbackItem, setFeedbackItem] = useState(null);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackNotice, setFeedbackNotice] = useState('');
 
   // --- Feature 1: 3-Day Follow-Up State ---
   const [followupSessions, setFollowupSessions] = useState([]);
@@ -89,10 +102,13 @@ const PatientDashboard = () => {
       // 1. Fetch Patient Profile
       const pProfile = await patientAPI.get(patientId);
       setPatientData(pProfile);
+      const initialLang = pProfile?.preferred_language || 'en';
+      setPreferredLanguage(initialLang);
 
       // 2. Fetch Prescriptions (only active & verified)
+      let pList = [];
       try {
-        const pList = await prescriptionAPI.listForPatient(patientId);
+        pList = await prescriptionAPI.listForPatient(patientId);
         setPrescriptions(Array.isArray(pList) ? pList : []);
       } catch (err) {
         console.warn('Prescription fetch error:', err);
@@ -100,12 +116,18 @@ const PatientDashboard = () => {
       }
 
       // 3. Fetch Schedule
+      let sched = null;
       try {
-        const sched = await scheduleAPI.getForPatient(patientId);
+        sched = await scheduleAPI.getForPatient(patientId);
         setScheduleData(sched);
       } catch (err) {
         console.warn('Schedule fetch error:', err);
         setScheduleData(null);
+      }
+
+      // Fetch translations if non-English
+      if (initialLang && initialLang !== 'en') {
+        fetchTranslationsForLanguage(initialLang, pList, sched);
       }
 
       // 4. Fetch Medical History
@@ -157,6 +179,108 @@ const PatientDashboard = () => {
       setError(err.response?.data?.detail || 'Failed to load your patient records.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTranslationsForLanguage = async (targetLang, prescList = prescriptions, sched = scheduleData) => {
+    if (!targetLang || targetLang === 'en') {
+      return;
+    }
+    setIsTranslating(true);
+    try {
+      const instructionsToTranslate = [];
+      const medItems = [];
+
+      (prescList || []).forEach((rev) => {
+        let meds = [];
+        try {
+          meds = typeof rev.medications === 'string' ? JSON.parse(rev.medications) : rev.medications || [];
+        } catch {
+          meds = [];
+        }
+        meds.forEach((m) => {
+          if (m.instructions) instructionsToTranslate.push(m.instructions);
+          medItems.push(m);
+        });
+      });
+
+      if (sched?.schedule) {
+        sched.schedule.forEach((item) => {
+          if (item.instructions) instructionsToTranslate.push(item.instructions);
+          if (item.meal_instruction) instructionsToTranslate.push(item.meal_instruction);
+          if (item.food_relation) instructionsToTranslate.push(item.food_relation);
+        });
+      }
+
+      if (instructionsToTranslate.length === 0 && medItems.length === 0) {
+        setIsTranslating(false);
+        return;
+      }
+
+      const res = await translationAPI.translateInstructions({
+        patient_id: patientId,
+        target_language: targetLang,
+        instructions: Array.from(new Set(instructionsToTranslate)),
+        medication_items: medItems,
+      });
+
+      const map = {};
+      (res.original_instructions || []).forEach((orig, i) => {
+        map[orig] = {
+          translated: res.translated_instructions[i] || orig,
+          status: res.status || 'Machine-Translated',
+          direction: res.direction || 'ltr',
+          lang_name: res.language_name,
+        };
+      });
+
+      setTranslatedCache((prev) => ({
+        ...prev,
+        [targetLang]: {
+          map,
+          direction: res.direction || 'ltr',
+          status: res.status || 'Machine-Translated',
+          language_name: res.language_name,
+        },
+      }));
+    } catch (err) {
+      console.warn('Translation fetch notice:', err);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleLanguageChange = async (newLang) => {
+    setPreferredLanguage(newLang);
+    if (patientId) {
+      try {
+        await translationAPI.updatePatientLanguage(patientId, newLang);
+      } catch (err) {
+        console.warn('Update patient mother tongue error:', err);
+      }
+    }
+    if (newLang !== 'en') {
+      await fetchTranslationsForLanguage(newLang);
+    }
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!feedbackItem || !feedbackText.trim()) return;
+    try {
+      await translationAPI.submitFeedback({
+        target_language: feedbackItem.targetLanguage,
+        original_text: feedbackItem.originalText,
+        reported_text: feedbackItem.reportedText || null,
+        issue_description: feedbackText,
+      });
+      setFeedbackNotice('Thank you! Your feedback has been sent to our clinical team for review.');
+      setTimeout(() => {
+        setFeedbackItem(null);
+        setFeedbackText('');
+        setFeedbackNotice('');
+      }, 2000);
+    } catch (err) {
+      setFeedbackNotice(err.response?.data?.detail || 'Failed to submit translation report.');
     }
   };
 
@@ -331,18 +455,25 @@ const PatientDashboard = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end md:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-end md:self-auto">
+            <div className="w-52 text-slate-800">
+              <LanguageSelector
+                selectedLanguage={preferredLanguage}
+                onSelectLanguage={handleLanguageChange}
+                showLabel={false}
+              />
+            </div>
             <button
               onClick={loadAllData}
-              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition"
+              className="px-3 py-2 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition"
               title="Refresh Records"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className={`w-3.5 h-3.5 ${isTranslating ? 'animate-spin' : ''}`} />
               <span>Refresh</span>
             </button>
             <button
               onClick={logout}
-              className="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition text-white shadow-sm"
+              className="px-3 py-2 bg-rose-500 hover:bg-rose-600 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition text-white shadow-sm"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Sign Out</span>
@@ -497,6 +628,32 @@ const PatientDashboard = () => {
                 <span className="text-slate-400 block text-[10px] uppercase">Assigned Clinician</span>
                 <span className="font-semibold text-slate-800 font-mono">{patientData?.assigned_doctor_id || 'DOC-1001'}</span>
               </div>
+              <div className="p-3.5 bg-teal-50/50 rounded-xl border border-teal-100 col-span-2 sm:col-span-3">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-teal-900 block text-[10px] uppercase font-bold tracking-wider">
+                      Preferred Mother Tongue / मातृभाषा
+                    </span>
+                    <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5 mt-0.5">
+                      <span>🌐</span>
+                      <span>{INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === preferredLanguage)?.name || 'English'}</span>
+                      <span className="text-teal-700 font-medium">
+                        ({INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === preferredLanguage)?.native_name || 'English'})
+                      </span>
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Instructions and chronotherapy timetables adapt to your preferred language across all 22 official languages of India.
+                    </p>
+                  </div>
+                  <div className="w-full sm:w-64">
+                    <LanguageSelector
+                      selectedLanguage={preferredLanguage}
+                      onSelectLanguage={handleLanguageChange}
+                      showLabel={false}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-3 pt-2">
@@ -547,6 +704,52 @@ const PatientDashboard = () => {
             </h2>
             <span className="text-xs text-slate-500">Only verified and finalized prescriptions are visible</span>
           </div>
+
+          {/* Multilingual Translation Controls */}
+          {preferredLanguage !== 'en' && (
+            <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold text-sm shadow-sm flex-shrink-0">
+                  🌐
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-xs text-teal-950">
+                      {INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === preferredLanguage)?.name} (
+                      {INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === preferredLanguage)?.native_name})
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        translatedCache[preferredLanguage]?.status === 'Clinician-Verified'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}
+                    >
+                      {translatedCache[preferredLanguage]?.status || 'Machine-Translated'}
+                    </span>
+                    {translatedCache[preferredLanguage]?.direction === 'rtl' && (
+                      <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded">
+                        RTL
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-teal-800/80 mt-0.5">
+                    Original clinician-approved English instructions remain the authoritative legal medical reference.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowOriginal(!showOriginal)}
+                  className="px-3 py-1.5 rounded-xl border border-teal-300 bg-white hover:bg-teal-50 text-xs font-semibold text-teal-900 transition flex items-center gap-1.5 shadow-2xs"
+                >
+                  <span>{showOriginal ? '👁️ View Translated' : '🇬🇧 View Original English'}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {prescriptions.length === 0 ? (
             <div className="clinical-card p-12 text-center">
@@ -628,7 +831,43 @@ const PatientDashboard = () => {
                               {m.dosage || m.strength || ''} &bull; {m.frequency || 'Daily'} &bull; {m.route || 'Oral'}
                             </div>
                             {m.instructions && (
-                              <p className="text-[10px] text-slate-500 mt-1 italic">{m.instructions}</p>
+                              <div className="mt-1.5 pt-1.5 border-t border-slate-200/60">
+                                <div className="flex items-center justify-between text-[10px] text-slate-400 mb-0.5">
+                                  <span>
+                                    {showOriginal || preferredLanguage === 'en'
+                                      ? 'Instruction'
+                                      : `Instruction (${INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === preferredLanguage)?.name})`}
+                                  </span>
+                                  {preferredLanguage !== 'en' && !showOriginal && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setFeedbackItem({
+                                          originalText: m.instructions,
+                                          targetLanguage: preferredLanguage,
+                                        })
+                                      }
+                                      className="text-amber-700 hover:underline"
+                                    >
+                                      Report Issue
+                                    </button>
+                                  )}
+                                </div>
+                                <p
+                                  className="text-[11px] text-slate-700 font-medium"
+                                  dir={
+                                    !showOriginal &&
+                                    translatedCache[preferredLanguage]?.direction === 'rtl'
+                                      ? 'rtl'
+                                      : 'ltr'
+                                  }
+                                >
+                                  {showOriginal || preferredLanguage === 'en'
+                                    ? m.instructions
+                                    : translatedCache[preferredLanguage]?.map?.[m.instructions]
+                                        ?.translated || m.instructions}
+                                </p>
+                              </div>
                             )}
                           </div>
                         ))}
@@ -656,6 +895,52 @@ const PatientDashboard = () => {
               </span>
             )}
           </div>
+
+          {/* Multilingual Translation Controls */}
+          {preferredLanguage !== 'en' && (
+            <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center font-bold text-sm shadow-sm flex-shrink-0">
+                  🌐
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-xs text-teal-950">
+                      {INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === preferredLanguage)?.name} (
+                      {INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === preferredLanguage)?.native_name})
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        translatedCache[preferredLanguage]?.status === 'Clinician-Verified'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-100 text-amber-800 border border-amber-300'
+                      }`}
+                    >
+                      {translatedCache[preferredLanguage]?.status || 'Machine-Translated'}
+                    </span>
+                    {translatedCache[preferredLanguage]?.direction === 'rtl' && (
+                      <span className="text-[10px] bg-amber-200 text-amber-900 font-bold px-1.5 py-0.5 rounded">
+                        RTL
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-teal-800/80 mt-0.5">
+                    Original clinician-approved English instructions remain the authoritative legal medical reference.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setShowOriginal(!showOriginal)}
+                  className="px-3 py-1.5 rounded-xl border border-teal-300 bg-white hover:bg-teal-50 text-xs font-semibold text-teal-900 transition flex items-center gap-1.5 shadow-2xs"
+                >
+                  <span>{showOriginal ? '👁️ View Translated' : '🇬🇧 View Original English'}</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {!scheduleData || !scheduleData.schedule || scheduleData.schedule.length === 0 ? (
             <div className="clinical-card p-12 text-center">
@@ -692,7 +977,26 @@ const PatientDashboard = () => {
                           Dosage: <strong>{item.dose || item.dosage || 'Standard'}</strong> &bull; Meal: {item.food_relation || item.meal_instruction || 'With water'}
                         </p>
                         {item.instructions && (
-                          <p className="text-[10px] text-emerald-700 mt-1 font-medium">{item.instructions}</p>
+                          <div className="mt-1 pt-1 border-t border-slate-100">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                              {showOriginal || preferredLanguage === 'en'
+                                ? 'Instruction'
+                                : `Instruction (${INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === preferredLanguage)?.name})`}
+                            </span>
+                            <p
+                              className="text-[11px] text-emerald-800 mt-0.5 font-medium"
+                              dir={
+                                !showOriginal &&
+                                translatedCache[preferredLanguage]?.direction === 'rtl'
+                                  ? 'rtl'
+                                  : 'ltr'
+                              }
+                            >
+                              {showOriginal || preferredLanguage === 'en'
+                                ? item.instructions
+                                : translatedCache[preferredLanguage]?.map?.[item.instructions]?.translated || item.instructions}
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1370,6 +1674,80 @@ const PatientDashboard = () => {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Translation Feedback Modal */}
+      {feedbackItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <span>🚩</span> Report Translation Issue
+              </h3>
+              <button
+                type="button"
+                onClick={() => setFeedbackItem(null)}
+                className="text-slate-400 hover:text-slate-600 text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="py-4 space-y-3 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Original Medical Instruction</span>
+                <p className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium mt-1">
+                  {feedbackItem.originalText}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Reported Language</span>
+                <p className="text-slate-700 font-semibold mt-0.5">
+                  {INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === feedbackItem.targetLanguage)?.name} (
+                  {INDIAN_LANGUAGES_FALLBACK.find((l) => l.code === feedbackItem.targetLanguage)?.native_name})
+                </p>
+              </div>
+
+              <div>
+                <label className="text-slate-700 block font-bold mb-1">
+                  Describe the error, ambiguity, or medical discrepancy:
+                </label>
+                <textarea
+                  rows={3}
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder="e.g. The translated phrasing for timing before food could be clearer in my regional dialect..."
+                  className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 focus:outline-none text-xs"
+                />
+              </div>
+
+              {feedbackNotice && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg font-medium text-xs">
+                  {feedbackNotice}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setFeedbackItem(null)}
+                className="flex-1 py-2 px-3 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitFeedback}
+                disabled={!feedbackText.trim()}
+                className="flex-1 py-2 px-3 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 active:bg-teal-800 rounded-xl disabled:opacity-50 transition"
+              >
+                Submit Report
+              </button>
             </div>
           </div>
         </div>

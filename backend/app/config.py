@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     GENERATED_REPORTS_DIR: str = "./generated_reports"
     MAX_UPLOAD_SIZE_MB: int = 15
 
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+
     CORS_ORIGINS: str = '["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://localhost:8000"]'
 
     @property

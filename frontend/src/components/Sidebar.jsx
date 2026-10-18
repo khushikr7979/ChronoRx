@@ -16,7 +16,8 @@ import {
   UserCheck,
   Stethoscope,
   QrCode,
-  MessageSquare
+  MessageSquare,
+  CreditCard
 } from 'lucide-react';
 import { useAuth, getRoleDisplayLabel } from '../context/AuthContext';
 import { usePatient } from '../context/PatientContext';
@@ -33,6 +34,7 @@ const Sidebar = ({ mobileOpen = false, onCloseMobile }) => {
     if (role === 'patient') {
       return [
         { to: '/', label: 'My Patient Portal', icon: LayoutDashboard },
+        { to: '/billing', label: 'Free Patient Guarantee', icon: ShieldCheck, badge: '₹0 Free' },
       ];
     }
 
@@ -44,6 +46,7 @@ const Sidebar = ({ mobileOpen = false, onCloseMobile }) => {
         { to: '/patients', label: 'Patient Directory', icon: Users },
         { to: '/scan', label: 'Scan / Upload Intake', icon: Camera, badge: 'Camera/Upload' },
         { to: '/ocr-review', label: 'OCR Extraction Review', icon: FileText },
+        { to: '/billing', label: 'Desk Subscription', icon: CreditCard },
         { to: '/settings', label: 'Intake Audit Trail', icon: Settings },
       ];
     }
@@ -52,6 +55,7 @@ const Sidebar = ({ mobileOpen = false, onCloseMobile }) => {
       return [
         { to: '/', label: 'Admin Dashboard', icon: LayoutDashboard },
         { to: '/clinic-operations', label: 'Follow-Ups & QR Desk', icon: QrCode, badge: '72h & QR' },
+        { to: '/billing', label: 'Subscription & Plans', icon: CreditCard, badge: 'Billing' },
         { to: '/settings', label: 'Staff & Audit Directory', icon: ShieldCheck, badge: 'Admin' },
         { to: '/patients', label: 'Global Patient Directory', icon: Users },
         { to: '/patients/register', label: 'Register Patient', icon: UserPlus },
@@ -75,6 +79,7 @@ const Sidebar = ({ mobileOpen = false, onCloseMobile }) => {
       { to: '/timetable', label: 'ChronoRx Timetable', icon: Clock },
       { to: '/summary', label: 'Clinical Summary Report', icon: ClipboardList },
       { to: '/prescription', label: 'E-Prescription / PDF', icon: FileCheck, badge: 'Doctor Sign-off' },
+      { to: '/billing', label: 'Subscription & Billing', icon: CreditCard, badge: 'Suite' },
       { to: '/settings', label: 'Clinical Audit Log', icon: Settings },
     ];
   };
