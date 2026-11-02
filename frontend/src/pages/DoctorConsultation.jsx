@@ -404,9 +404,17 @@ const DoctorConsultation = () => {
       {/* Header & Patient Context Strip */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-teal-700 uppercase tracking-wider mb-1">
-            <Stethoscope className="w-4 h-4 text-teal-600" />
-            <span>Tier 2: Doctor Clinical Consultation Suite</span>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-teal-700 uppercase tracking-wider mb-1">
+            <div className="flex items-center gap-1.5">
+              <Stethoscope className="w-4 h-4 text-teal-600" />
+              <span>Tier 2: Doctor Clinical Consultation Suite</span>
+            </div>
+            {user?.role === 'doctor' && (
+              <span className="text-[11px] font-semibold text-teal-900 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full normal-case flex items-center gap-1 shadow-xs">
+                <span>Specialty:</span>
+                <strong className="text-teal-950 font-bold">{user.department || 'General Medicine (Internal Medicine)'}</strong>
+              </span>
+            )}
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
             Consultation & Prescription Workflow

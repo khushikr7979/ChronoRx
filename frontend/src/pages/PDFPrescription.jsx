@@ -14,7 +14,8 @@ import {
   ExternalLink,
   Sparkles,
   Send,
-  MessageSquare
+  MessageSquare,
+  Stethoscope,
 } from 'lucide-react';
 import MedicalDisclaimer from '../components/MedicalDisclaimer';
 
@@ -183,10 +184,10 @@ const PDFPrescription = () => {
           Authorizing Clinician & Clinic Details
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
           <div>
             <label className="block text-slate-700 font-semibold mb-1">
-              Prescribing Clinician Name & Credentials *
+              Prescribing Clinician Name &amp; Credentials *
             </label>
             <input
               type="text"
@@ -194,6 +195,15 @@ const PDFPrescription = () => {
               onChange={(e) => setDoctorName(e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none"
             />
+          </div>
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">
+              Clinical Department / Specialty
+            </label>
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium">
+              <Stethoscope className="w-4 h-4 text-teal-600 flex-shrink-0" />
+              <span className="truncate">{user?.department || 'General Medicine (Internal Medicine)'}</span>
+            </div>
           </div>
           <div>
             <label className="block text-slate-700 font-semibold mb-1">

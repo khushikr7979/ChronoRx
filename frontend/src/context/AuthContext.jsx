@@ -47,6 +47,7 @@ const normalizeUserObject = (rawUser, profileData = null) => {
   const systemId = merged.user_id || merged.system_id || '';
   const role = (merged.role || 'doctor').toLowerCase();
   const profilePhoto = merged.profile_photo || null;
+  const department = merged.department || (role === 'doctor' ? 'General Medicine (Internal Medicine)' : null);
   return {
     ...merged,
     name: fullName,
@@ -58,6 +59,7 @@ const normalizeUserObject = (rawUser, profileData = null) => {
     profile_photo: profilePhoto,
     has_photo: Boolean(profilePhoto),
     initials: merged.initials || getUserInitials(fullName),
+    department,
   };
 };
 
@@ -158,6 +160,18 @@ export const AuthProvider = ({ children }) => {
     return prof;
   }, []);
 
+  const updateDepartment = useCallback(async (newDepartment, targetUserId = null) => {
+    const res = await profileAPI.updateDepartment(newDepartment, targetUserId);
+    if (!targetUserId || targetUserId === user?.user_id) {
+      setUser((prev) => {
+        const updated = { ...(prev || {}), department: res.department };
+        localStorage.setItem('chronorx_user', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    return res;
+  }, [user]);
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -178,6 +192,7 @@ export const AuthProvider = ({ children }) => {
         refreshProfile,
         uploadProfilePhoto,
         removeProfilePhoto,
+        updateDepartment,
         profileModalState,
         openProfileModal,
         closeProfileModal,

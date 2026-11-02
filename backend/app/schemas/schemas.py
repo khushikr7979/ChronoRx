@@ -15,6 +15,7 @@ class UserCreate(BaseModel):
     role: str = Field(..., description="Role: doctor, receptionist, admin, or patient")
     username: Optional[str] = None
     patient_id: Optional[str] = None
+    department: Optional[str] = Field(None, description="Hospital clinical department (e.g. 'Cardiology (Heart)')")
 
 class UserResponse(BaseModel):
     id: int
@@ -26,6 +27,7 @@ class UserResponse(BaseModel):
     patient_id: Optional[str] = None
     profile_photo: Optional[str] = None
     preferred_language: Optional[str] = "en"
+    department: Optional[str] = None
     is_active: bool
     created_at: datetime.datetime
 
@@ -42,12 +44,30 @@ class ProfileResponse(BaseModel):
     patient_id: Optional[str] = None
     profile_photo: Optional[str] = None
     preferred_language: Optional[str] = "en"
+    department: Optional[str] = None
     has_photo: bool = False
     default_avatar: bool = True
     initials: str = "U"
 
     class Config:
         from_attributes = True
+
+class DepartmentUpdateRequest(BaseModel):
+    department: str = Field(..., description="Approved hospital department identifier or full display name")
+
+# --- Hospital Department Schemas ---
+class DepartmentItem(BaseModel):
+    id: str
+    name: str
+    category: str
+    category_id: str
+    description: str
+    keywords: List[str] = []
+
+class DepartmentCategoryGroup(BaseModel):
+    category: str
+    count: int
+    departments: List[DepartmentItem]
 
 class Token(BaseModel):
     access_token: str
@@ -559,7 +579,7 @@ class DoctorSlotResponse(BaseModel):
     doctor_id: str
     doctor_name: str
     email: Optional[str] = ""
-    department: str = "Internal Medicine & Chronopharmacology"
+    department: str = "General Medicine (Internal Medicine)"
     date: Optional[str] = None
     available_slots: List[str] = []
     booked_slots: List[str] = []
@@ -571,7 +591,7 @@ class AppointmentCreate(BaseModel):
     time_slot: Optional[str] = Field(None, description="Selected time slot (e.g. '10:00 AM')")
     appointment_time: Optional[str] = Field(None, description="Alias for time_slot")
     consultation_type: Optional[str] = "IN_PERSON"
-    department: Optional[str] = "Internal Medicine & Chronopharmacology"
+    department: Optional[str] = "General Medicine (Internal Medicine)"
     reason: Optional[str] = "Scheduled Clinical Consultation"
 
 class AppointmentStatusUpdate(BaseModel):

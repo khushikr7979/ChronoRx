@@ -64,8 +64,15 @@ export const authAPI = {
     const res = await api.get('/auth/me');
     return res.data;
   },
-  getStaff: async (role) => {
-    const res = await api.get('/auth/staff', { params: role ? { role } : {} });
+  getStaff: async (role, department = null) => {
+    const params = {};
+    if (role) params.role = role;
+    if (department) params.department = department;
+    const res = await api.get('/auth/staff', { params });
+    return res.data;
+  },
+  updateStaffDepartment: async (userId, department) => {
+    const res = await api.patch(`/auth/staff/${userId}/department`, { department });
     return res.data;
   },
 };
@@ -74,6 +81,11 @@ export const authAPI = {
 export const profileAPI = {
   getMe: async () => {
     const res = await api.get('/profile/me');
+    return res.data;
+  },
+  updateDepartment: async (department, targetUserId = null) => {
+    const url = targetUserId ? `/profile/${targetUserId}/department` : '/profile/department';
+    const res = await api.put(url, { department });
     return res.data;
   },
   uploadPhoto: async (fileBlob, filename = null) => {
@@ -357,10 +369,11 @@ export const followupAPI = {
 
 // --- Appointment Booking & QR Receipt Endpoints ---
 export const appointmentAPI = {
-  getDoctorsAndSlots: async (date = null, doctorId = null) => {
+  getDoctorsAndSlots: async (date = null, doctorId = null, department = null) => {
     const params = {};
     if (date) params.date = date;
     if (doctorId) params.doctor_id = doctorId;
+    if (department) params.department = department;
     const res = await api.get('/appointments/doctors', { params });
     return res.data;
   },
@@ -389,6 +402,22 @@ export const appointmentAPI = {
       status,
       reason,
     });
+    return res.data;
+  },
+};
+
+// --- Hospital Department Endpoints ---
+export const departmentAPI = {
+  getAll: async (params = {}) => {
+    const res = await api.get('/departments', { params });
+    return res.data;
+  },
+  getCategories: async () => {
+    const res = await api.get('/departments/categories');
+    return res.data;
+  },
+  getById: async (deptId) => {
+    const res = await api.get(`/departments/${deptId}`);
     return res.data;
   },
 };

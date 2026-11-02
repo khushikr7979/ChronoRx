@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePatient } from '../context/PatientContext';
 import { followupAPI, appointmentAPI } from '../services/api';
+import DepartmentSelect from '../components/DepartmentSelect';
 import {
   MessageSquare,
   QrCode,
@@ -58,6 +59,7 @@ const ClinicOperations = () => {
   // Staff Booking Form State
   const [bookPatientId, setBookPatientId] = useState(selectedPatient?.patient_id || '');
   const [bookDoctorId, setBookDoctorId] = useState('');
+  const [staffDeptFilter, setStaffDeptFilter] = useState('');
   const [bookDate, setBookDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [bookSlot, setBookSlot] = useState('');
   const [bookReason, setBookReason] = useState('Scheduled Chronotherapy & Medication Review');
@@ -107,7 +109,7 @@ const ClinicOperations = () => {
     try {
       const [apptList, docList] = await Promise.all([
         appointmentAPI.list(),
-        appointmentAPI.getDoctorsAndSlots(bookDate)
+        appointmentAPI.getDoctorsAndSlots(bookDate, null, staffDeptFilter || null)
       ]);
       setAppointments(Array.isArray(apptList) ? apptList : []);
       const docs = Array.isArray(docList) ? docList : [];
@@ -124,6 +126,26 @@ const ClinicOperations = () => {
       setLoadingAppointments(false);
     }
   };
+
+  useEffect(() => {
+    appointmentAPI
+      .getDoctorsAndSlots(bookDate, null, staffDeptFilter || null)
+      .then((docList) => {
+        const docs = Array.isArray(docList) ? docList : [];
+        setDoctorsSlots(docs);
+        const curDoc = docs.find((d) => d.doctor_id === bookDoctorId) || docs[0];
+        if (curDoc) {
+          setBookDoctorId(curDoc.doctor_id);
+          if (curDoc.available_slots?.length > 0 && !curDoc.available_slots.includes(bookSlot)) {
+            setBookSlot(curDoc.available_slots[0]);
+          }
+        } else {
+          setBookDoctorId('');
+          setBookSlot('');
+        }
+      })
+      .catch(() => {});
+  }, [bookDate, staffDeptFilter]);
 
   useEffect(() => {
     loadFollowups();
@@ -746,6 +768,32 @@ const ClinicOperations = () => {
               </h2>
 
               <form onSubmit={handleStaffBookAppointment} className="space-y-3 text-xs">
+                {/* Department filter */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase">
+                      Filter Doctor by Department / Specialty
+                    </label>
+                    {staffDeptFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setStaffDeptFilter('')}
+                        className="text-[11px] text-teal-600 hover:text-teal-800 underline font-semibold"
+                      >
+                        Reset / Show All
+                      </button>
+                    )}
+                  </div>
+                  <DepartmentSelect
+                    value={staffDeptFilter}
+                    onChange={(dept) => setStaffDeptFilter(dept)}
+                    onClear={() => setStaffDeptFilter('')}
+                    placeholder="Filter by department (29 clinical specialties)..."
+                    showLabel={false}
+                    compact
+                  />
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
@@ -768,26 +816,32 @@ const ClinicOperations = () => {
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                      Doctor
+                      Doctor {staffDeptFilter && `(${staffDeptFilter})`}
                     </label>
-                    <select
-                      value={bookDoctorId}
-                      onChange={(e) => {
-                        setBookDoctorId(e.target.value);
-                        const docObj = doctorsSlots.find((d) => d.doctor_id === e.target.value);
-                        if (docObj?.available_slots?.length > 0) {
-                          setBookSlot(docObj.available_slots[0]);
-                        }
-                      }}
-                      className="clinical-input"
-                      required
-                    >
-                      {doctorsSlots.map((d) => (
-                        <option key={d.doctor_id} value={d.doctor_id}>
-                          {d.doctor_name} ({d.doctor_id})
-                        </option>
-                      ))}
-                    </select>
+                    {doctorsSlots.length > 0 ? (
+                      <select
+                        value={bookDoctorId}
+                        onChange={(e) => {
+                          setBookDoctorId(e.target.value);
+                          const docObj = doctorsSlots.find((d) => d.doctor_id === e.target.value);
+                          if (docObj?.available_slots?.length > 0) {
+                            setBookSlot(docObj.available_slots[0]);
+                          }
+                        }}
+                        className="clinical-input"
+                        required
+                      >
+                        {doctorsSlots.map((d) => (
+                          <option key={d.doctor_id} value={d.doctor_id}>
+                            {d.doctor_name} &mdash; {d.department} ({d.doctor_id})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="p-2 bg-amber-50 border border-amber-200 rounded-md text-[11px] text-amber-900">
+                        No doctors found for {staffDeptFilter}.
+                      </div>
+                    )}
                   </div>
 
                   <div>

@@ -20,6 +20,7 @@ import {
   BadgeInfo
 } from 'lucide-react';
 import MedicalDisclaimer from '../components/MedicalDisclaimer';
+import DepartmentSelect from '../components/DepartmentSelect';
 
 const Login = () => {
   const [mode, setMode] = useState('login'); // 'login' or 'register'
@@ -34,6 +35,7 @@ const Login = () => {
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regRole, setRegRole] = useState('doctor');
+  const [regDepartment, setRegDepartment] = useState('General Medicine (Internal Medicine)');
   const [showRegPassword, setShowRegPassword] = useState(false);
 
   // Success / Feedback state
@@ -101,6 +103,7 @@ const Login = () => {
         password: regPassword,
         full_name: regFullName.trim(),
         role: regRole,
+        department: regRole === 'doctor' ? regDepartment : null,
       });
 
       setRegisteredUser(newUser);
@@ -376,6 +379,20 @@ const Login = () => {
                   Role automatically determines your generated System ID sequence and access permissions.
                 </p>
               </div>
+
+              {regRole === 'doctor' && (
+                <div>
+                  <DepartmentSelect
+                    value={regDepartment}
+                    onChange={(deptName) => setRegDepartment(deptName)}
+                    label="Primary Clinical Department *"
+                    required
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Select your clinical department across 29 accredited specialties.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">

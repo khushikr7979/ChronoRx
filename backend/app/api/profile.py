@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.models import User
-from app.schemas.schemas import ProfileResponse
+from app.schemas.schemas import ProfileResponse, DepartmentUpdateRequest
 from app.security.anonymizer import log_audit_event
 from app.security.auth_handler import get_current_user
+from app.services.department_service import validate_department
 
 router = APIRouter(prefix="/profile", tags=["User Profile & Avatar"])
 
@@ -84,6 +85,7 @@ def build_profile_response(user: User) -> ProfileResponse:
         patient_id=user.patient_id,
         profile_photo=photo_url,
         preferred_language=getattr(user, "preferred_language", "en") or "en",
+        department=getattr(user, "department", None),
         has_photo=bool(photo_url),
         default_avatar=not bool(photo_url),
         initials=compute_user_initials(user.full_name),
@@ -378,3 +380,104 @@ def delete_profile_photo_for_target(
     """
     _enforce_self_authorization(current_user, target_user_id)
     return delete_my_profile_photo(target_user_id=target_user_id, db=db, current_user=current_user)
+
+
+@router.put("/department", response_model=ProfileResponse)
+@router.patch("/department", response_model=ProfileResponse)
+def update_my_department(
+    payload: DepartmentUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Updates the clinical department for the authenticated user (doctor/clinician).
+    - Patients are blocked (HTTP 403 Forbidden).
+    - Validates against the 29 approved hospital departments (HTTP 400 if invalid).
+    - Writes immutable audit log.
+    """
+    if current_user.role == "patient":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: Patients cannot set hospital departments."
+        )
+
+    is_valid, canonical_name, _ = validate_department(payload.department)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid department '{payload.department}'. Must match one of the 29 approved hospital departments."
+        )
+
+    prev_dept = current_user.department
+    current_user.department = canonical_name
+    db.commit()
+    db.refresh(current_user)
+
+    log_audit_event(
+        db,
+        patient_id=current_user.patient_id,
+        user_id=current_user.user_id,
+        action="DOCTOR_DEPARTMENT_UPDATED",
+        details=f"User {current_user.user_id} ({current_user.role}) updated department from '{prev_dept}' to '{canonical_name}'."
+    )
+
+    return build_profile_response(current_user)
+
+
+@router.put("/department/{target_user_id}", response_model=ProfileResponse)
+@router.patch("/department/{target_user_id}", response_model=ProfileResponse)
+@router.put("/{target_user_id}/department", response_model=ProfileResponse)
+@router.patch("/{target_user_id}/department", response_model=ProfileResponse)
+def update_target_department(
+    target_user_id: str,
+    payload: DepartmentUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Updates a target user's department with IDOR prevention:
+    - Normal staff can only update their own profile.
+    - Admins can update any staff/clinician profile.
+    """
+    target = target_user_id.strip()
+    is_self = target.lower() == "me" or target.upper() == current_user.user_id.upper()
+    if not is_self and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: Users cannot modify another doctor's department."
+        )
+
+    target_user = current_user if is_self else db.query(User).filter(
+        (User.user_id == target) | (User.user_id == target.upper())
+    ).first()
+
+    if not target_user:
+        raise HTTPException(status_code=404, detail=f"User '{target_user_id}' not found.")
+
+    if target_user.role == "patient":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: Patient accounts do not have hospital departments."
+        )
+
+    is_valid, canonical_name, _ = validate_department(payload.department)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid department '{payload.department}'. Must match one of the 29 approved hospital departments."
+        )
+
+    prev_dept = target_user.department
+    target_user.department = canonical_name
+    db.commit()
+    db.refresh(target_user)
+
+    log_audit_event(
+        db,
+        patient_id=target_user.patient_id,
+        user_id=current_user.user_id,
+        action="DOCTOR_DEPARTMENT_UPDATED",
+        details=f"User {current_user.user_id} updated department for {target_user.user_id} ({target_user.role}) from '{prev_dept}' to '{canonical_name}'."
+    )
+
+    return build_profile_response(target_user)

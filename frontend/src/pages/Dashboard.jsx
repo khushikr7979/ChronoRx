@@ -246,15 +246,23 @@ const Dashboard = () => {
       {/* Hero Welcome & Quick Launch */}
       <div className="bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 border border-teal-900/50">
         <div>
-          <div className="inline-flex items-center gap-2 bg-teal-500/20 text-teal-300 text-xs font-semibold px-2.5 py-1 rounded-full mb-2 border border-teal-500/30">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>
-              {role === 'doctor'
-                ? `Clinician Portal • Dr. ${user?.full_name?.replace(/^Dr\.\s*/i, '') || 'Doctor'} (${user?.user_id})`
-                : role === 'receptionist'
-                ? `Intake Desk • ${user?.full_name} (${user?.user_id})`
-                : `Administrator Portal • ${user?.full_name} (${user?.user_id})`}
-            </span>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="inline-flex items-center gap-2 bg-teal-500/20 text-teal-300 text-xs font-semibold px-2.5 py-1 rounded-full border border-teal-500/30">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>
+                {role === 'doctor'
+                  ? `Clinician Portal • Dr. ${user?.full_name?.replace(/^Dr\.\s*/i, '') || 'Doctor'} (${user?.user_id})`
+                  : role === 'receptionist'
+                  ? `Intake Desk • ${user?.full_name} (${user?.user_id})`
+                  : `Administrator Portal • ${user?.full_name} (${user?.user_id})`}
+              </span>
+            </div>
+            {role === 'doctor' && (
+              <div className="inline-flex items-center gap-1.5 bg-teal-800/50 text-teal-200 text-xs font-medium px-2.5 py-1 rounded-full border border-teal-500/30 shadow-xs">
+                <Stethoscope className="w-3.5 h-3.5 text-teal-300" />
+                <span>{user?.department || 'General Medicine (Internal Medicine)'}</span>
+              </div>
+            )}
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight">
             {role === 'doctor'

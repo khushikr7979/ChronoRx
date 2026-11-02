@@ -80,6 +80,8 @@ def migrate_database_schema():
                 alter_statements.append("ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255)")
             if "preferred_language" not in u_cols:
                 alter_statements.append("ALTER TABLE users ADD COLUMN preferred_language VARCHAR(20) DEFAULT 'en'")
+            if "department" not in u_cols:
+                alter_statements.append("ALTER TABLE users ADD COLUMN department VARCHAR(100) DEFAULT 'General Medicine (Internal Medicine)'")
 
         if "followup_sessions" in existing_tables:
             f_cols = {c["name"] for c in inspector.get_columns("followup_sessions")}
@@ -105,6 +107,7 @@ def migrate_database_schema():
 
             if "users" in existing_tables:
                 conn.execute(text("UPDATE users SET preferred_language = 'en' WHERE preferred_language IS NULL OR preferred_language = ''"))
+                conn.execute(text("UPDATE users SET department = 'General Medicine (Internal Medicine)' WHERE (department IS NULL OR department = '') AND role = 'doctor'"))
 
         # Synchronize PostgreSQL auto-increment serial sequences to prevent duplicate key errors after migrations
         if "postgresql" in engine.dialect.name:
@@ -193,6 +196,7 @@ def seed_default_demo_data():
                 hashed_password=get_password_hash("ClinicianPass2026!"),
                 full_name="Dr. Sarah Jenkins, M.D.",
                 role="doctor",
+                department="General Medicine (Internal Medicine)",
                 is_active=True
             )
             receptionist_user = User(

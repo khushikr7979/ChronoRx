@@ -19,6 +19,7 @@ from app.schemas.schemas import (
 )
 from app.security.auth_handler import get_current_user, require_roles
 from app.security.anonymizer import log_audit_event
+from app.services.department_service import normalize_department
 
 router = APIRouter(prefix="/appointments", tags=["Appointments & QR Receipt Verification"])
 
@@ -135,14 +136,16 @@ def _serialize_appointment(appt: Appointment) -> AppointmentResponse:
 
 
 def _infer_department(doctor: User) -> str:
+    if doctor.department:
+        return normalize_department(doctor.department)
     name_lower = (doctor.full_name or "").lower()
     if "cardio" in name_lower:
-        return "Cardiology & Chronotherapy"
+        return "Cardiology (Heart)"
     if "neuro" in name_lower:
-        return "Neurology & Sleep Medicine"
+        return "Neurology (Brain & Nervous System)"
     if "onco" in name_lower:
-        return "Clinical Oncology"
-    return "Internal Medicine & Chronopharmacology"
+        return "Oncology (Cancer Care)"
+    return "General Medicine (Internal Medicine)"
 
 
 @router.get("/doctors", response_model=List[DoctorSlotResponse])
@@ -150,12 +153,14 @@ def _infer_department(doctor: User) -> str:
 def list_available_doctors_and_slots(
     date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format"),
     doctor_id: Optional[str] = Query(None, description="Optional filter by doctor_id"),
+    department: Optional[str] = Query(None, description="Optional filter by department name or category"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Returns active doctors and their available vs booked time slots for a target date.
     Accessible to authenticated patients, doctors, receptionists, and admins.
+    Supports filtering by target department.
     """
     target_date = (date or datetime.date.today().isoformat()).strip()
 
@@ -163,6 +168,10 @@ def list_available_doctors_and_slots(
     if doctor_id:
         doc_query = doc_query.filter(User.user_id == doctor_id)
     doctors = doc_query.order_by(User.id.asc()).all()
+
+    if department:
+        norm_dept = normalize_department(department)
+        doctors = [d for d in doctors if _infer_department(d).lower() == norm_dept.lower()]
 
     booked_records = (
         db.query(Appointment)
@@ -276,6 +285,8 @@ def book_appointment(
     qr_payload = f"CRX-APT:{appointment_id}:{qr_token}"
     now_dt = datetime.datetime.utcnow()
 
+    appt_dept = normalize_department(payload.department or _infer_department(doctor))
+
     new_appt = Appointment(
         appointment_id=appointment_id,
         receipt_number=receipt_number,
@@ -283,7 +294,7 @@ def book_appointment(
         patient_name=patient_name,
         doctor_id=doctor.user_id,
         doctor_name=doctor.full_name,
-        department=payload.department or _infer_department(doctor),
+        department=appt_dept,
         appointment_date=appt_date,
         time_slot=slot,
         appointment_time=slot,

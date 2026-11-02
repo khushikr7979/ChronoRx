@@ -38,6 +38,7 @@ import {
 import MedicalDisclaimer from '../components/MedicalDisclaimer';
 import { UserProfileCard, UserAvatar } from '../components/UserProfileCard';
 import LanguageSelector, { INDIAN_LANGUAGES_FALLBACK } from '../components/LanguageSelector';
+import DepartmentSelect from '../components/DepartmentSelect';
 
 const PatientDashboard = () => {
   const { user, logout } = useAuth();
@@ -74,6 +75,7 @@ const PatientDashboard = () => {
   const [doctorsSlots, setDoctorsSlots] = useState([]);
   const [myAppointments, setMyAppointments] = useState([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -302,18 +304,24 @@ const PatientDashboard = () => {
   useEffect(() => {
     if (selectedDate && patientId) {
       appointmentAPI
-        .getDoctorsAndSlots(selectedDate)
+        .getDoctorsAndSlots(selectedDate, null, selectedDeptFilter || null)
         .then((docs) => {
           const arr = Array.isArray(docs) ? docs : [];
           setDoctorsSlots(arr);
           const curDoc = arr.find((d) => d.doctor_id === selectedDoctorId) || arr[0];
-          if (curDoc?.available_slots?.length > 0 && !curDoc.available_slots.includes(selectedSlot)) {
-            setSelectedSlot(curDoc.available_slots[0]);
+          if (curDoc) {
+            setSelectedDoctorId(curDoc.doctor_id);
+            if (curDoc.available_slots?.length > 0 && !curDoc.available_slots.includes(selectedSlot)) {
+              setSelectedSlot(curDoc.available_slots[0]);
+            }
+          } else {
+            setSelectedDoctorId('');
+            setSelectedSlot('');
           }
         })
         .catch(() => {});
     }
-  }, [selectedDate]);
+  }, [selectedDate, selectedDeptFilter, patientId]);
 
   const handleDownloadPdf = async (review) => {
     try {
@@ -1324,28 +1332,67 @@ const PatientDashboard = () => {
               </div>
 
               <form onSubmit={handleBookAppointment} className="space-y-3.5 text-xs">
+                {/* Department / Specialty Filter */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase">
+                      Filter by Clinical Specialty / Department
+                    </label>
+                    {selectedDeptFilter && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDeptFilter('')}
+                        className="text-[11px] text-teal-600 hover:text-teal-800 underline font-semibold"
+                      >
+                        Reset / Show All
+                      </button>
+                    )}
+                  </div>
+                  <DepartmentSelect
+                    value={selectedDeptFilter}
+                    onChange={(dept) => setSelectedDeptFilter(dept)}
+                    onClear={() => setSelectedDeptFilter('')}
+                    placeholder="All 29 Clinical Specialties (Search to filter doctors)..."
+                    showLabel={false}
+                    compact
+                  />
+                </div>
+
                 <div>
                   <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                    Select Attending Physician
+                    Select Attending Physician {selectedDeptFilter && `(${selectedDeptFilter})`}
                   </label>
-                  <select
-                    value={selectedDoctorId}
-                    onChange={(e) => {
-                      setSelectedDoctorId(e.target.value);
-                      const docObj = doctorsSlots.find((d) => d.doctor_id === e.target.value);
-                      if (docObj?.available_slots?.length > 0) {
-                        setSelectedSlot(docObj.available_slots[0]);
-                      }
-                    }}
-                    className="clinical-input"
-                    required
-                  >
-                    {doctorsSlots.map((doc) => (
-                      <option key={doc.doctor_id} value={doc.doctor_id}>
-                        {doc.doctor_name} &mdash; {doc.department} ({doc.available_slots.length} slots open)
-                      </option>
-                    ))}
-                  </select>
+                  {doctorsSlots.length > 0 ? (
+                    <select
+                      value={selectedDoctorId}
+                      onChange={(e) => {
+                        setSelectedDoctorId(e.target.value);
+                        const docObj = doctorsSlots.find((d) => d.doctor_id === e.target.value);
+                        if (docObj?.available_slots?.length > 0) {
+                          setSelectedSlot(docObj.available_slots[0]);
+                        }
+                      }}
+                      className="clinical-input"
+                      required
+                    >
+                      {doctorsSlots.map((doc) => (
+                        <option key={doc.doctor_id} value={doc.doctor_id}>
+                          {doc.doctor_name} &mdash; {doc.department} ({doc.available_slots.length} slots open)
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs flex items-center justify-between">
+                      <span>No active doctors currently assigned to {selectedDeptFilter}.</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDeptFilter('')}
+                        className="text-teal-700 underline font-bold"
+                      >
+                        Clear Filter
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

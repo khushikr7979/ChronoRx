@@ -1595,8 +1595,157 @@ def run_all_feature_tests():
             test_settings.RAZORPAY_WEBHOOK_SECRET = orig_wh_secret
         print("S-16. Webhook Verification & Anti-Replay Idempotency [PASS] Verified with HMAC secret & replay guard")
 
+        # =====================================================================
+        # PART 8: HOSPITAL DEPARTMENTS MANAGEMENT & SELECTION SYSTEM (16 TESTS)
+        # =====================================================================
+        print("\n" + "=" * 78)
+        print("PART 8: HOSPITAL DEPARTMENTS MANAGEMENT & SELECTION SYSTEM (16 TESTS)")
         print("=" * 78)
-        print("ALL 84 VERIFICATION & REGRESSION CHECKS PASSED WITH ZERO ERRORS!")
+
+        # D-01: Retrieve all 29 departments across 5 categories
+        res_all_depts = client.get("/departments")
+        assert res_all_depts.status_code == 200, res_all_depts.text
+        depts_data = res_all_depts.json()
+        assert len(depts_data) == 29, f"Expected exactly 29 departments, got {len(depts_data)}"
+        cats_found = set(d["category"] for d in depts_data)
+        assert len(cats_found) == 5, f"Expected 5 categories, got {len(cats_found)}"
+        print(f"D-01. List All Hospital Departments [PASS] Retrieved exactly {len(depts_data)} departments across 5 categories")
+
+        # D-02: Get department categories and group counts
+        res_cats = client.get("/departments/categories")
+        assert res_cats.status_code == 200, res_cats.text
+        cats_data = res_cats.json()
+        assert len(cats_data) == 5, f"Expected 5 category groups, got {len(cats_data)}"
+        total_in_groups = sum(len(g["departments"]) for g in cats_data)
+        assert total_in_groups == 29, f"Expected 29 departments in groups, got {total_in_groups}"
+        print(f"D-02. Department Categories & Grouping [PASS] 5 categories verified with total {total_in_groups} specialties")
+
+        # D-03: Search "heart" -> Cardiology (Heart)
+        res_search_heart = client.get("/departments?search=heart")
+        assert res_search_heart.status_code == 200
+        heart_results = res_search_heart.json()
+        assert any("Cardiology" in d["name"] for d in heart_results), "Expected Cardiology for search 'heart'"
+        print("D-03. Department Search by Keyword 'heart' [PASS] Matched Cardiology (Heart)")
+
+        # D-04: Search "brain" -> Neurology (Brain & Nervous System)
+        res_search_brain = client.get("/departments?search=brain")
+        assert res_search_brain.status_code == 200
+        brain_results = res_search_brain.json()
+        assert any("Neurology" in d["name"] for d in brain_results), "Expected Neurology for search 'brain'"
+        print("D-04. Department Search by Keyword 'brain' [PASS] Matched Neurology (Brain & Nervous System)")
+
+        # D-05: Search "kidney" -> Nephrology (Kidneys)
+        res_search_kidney = client.get("/departments?search=kidney")
+        assert res_search_kidney.status_code == 200
+        kidney_results = res_search_kidney.json()
+        assert any("Nephrology" in d["name"] for d in kidney_results), "Expected Nephrology for search 'kidney'"
+        print("D-05. Department Search by Keyword 'kidney' [PASS] Matched Nephrology (Kidneys)")
+
+        # D-06: Search "eye" -> Ophthalmology (Eye Care)
+        res_search_eye = client.get("/departments?search=eye")
+        assert res_search_eye.status_code == 200
+        eye_results = res_search_eye.json()
+        assert any("Ophthalmology" in d["name"] for d in eye_results), "Expected Ophthalmology for search 'eye'"
+        print("D-06. Department Search by Keyword 'eye' [PASS] Matched Ophthalmology (Eye Care)")
+
+        # D-07: Search "x-ray" -> Radiology & Imaging (X-Ray, MRI, CT Scan)
+        res_search_xray = client.get("/departments?search=x-ray")
+        assert res_search_xray.status_code == 200
+        xray_results = res_search_xray.json()
+        assert any("Radiology" in d["name"] for d in xray_results), "Expected Radiology for search 'x-ray'"
+        print("D-07. Department Search by Keyword 'x-ray' [PASS] Matched Radiology & Imaging")
+
+        # D-08: Filter by category "Super Specialties" -> exactly 7
+        res_super = client.get("/departments?category=Super Specialties")
+        assert res_super.status_code == 200
+        super_results = res_super.json()
+        assert len(super_results) == 7, f"Expected 7 super specialties, got {len(super_results)}"
+        print(f"D-08. Category Filter 'Super Specialties' [PASS] Returned exactly {len(super_results)} departments")
+
+        # D-09: Doctor registration with explicit department
+        res_reg_doc = client.post("/auth/register", json={
+            "email": "dr.carter.cardio@chronorx.tech",
+            "password": "SecurePassword123!",
+            "full_name": "Dr. Angela Carter, M.D.",
+            "role": "doctor",
+            "department": "Cardiology (Heart)",
+        })
+        assert res_reg_doc.status_code in (200, 201), res_reg_doc.text
+        doc_reg_data = res_reg_doc.json()
+        assert doc_reg_data["department"] == "Cardiology (Heart)"
+        print("D-09. Doctor Registration with Valid Department [PASS] Registered with Cardiology (Heart)")
+
+        # D-10: Doctor registration with invalid department rejected with 400
+        res_reg_bad = client.post("/auth/register", json={
+            "email": "dr.fake.dept@chronorx.tech",
+            "password": "SecurePassword123!",
+            "full_name": "Dr. Fake Dept, M.D.",
+            "role": "doctor",
+            "department": "Astrology & Alchemy",
+        })
+        assert res_reg_bad.status_code == 400
+        assert "Invalid department" in res_reg_bad.json()["detail"]
+        print("D-10. Doctor Registration with Invalid Department [PASS] Rejected with HTTP 400 Bad Request")
+
+        # D-11: Doctor self-update department via PUT /profile/department
+        res_upd_dept = client.put(
+            "/profile/department",
+            json={"department": "Endocrinology (Diabetes & Hormones)"},
+            headers=h_doc1
+        )
+        assert res_upd_dept.status_code == 200, res_upd_dept.text
+        assert res_upd_dept.json()["department"] == "Endocrinology (Diabetes & Hormones)"
+        print("D-11. Doctor Self-Update Department [PASS] Successfully updated to Endocrinology")
+
+        # D-12: Doctor self-update with invalid department rejected with 400
+        res_upd_bad = client.put(
+            "/profile/department",
+            json={"department": "Quackery & Homeopathy"},
+            headers=h_doc1
+        )
+        assert res_upd_bad.status_code == 400
+        print("D-12. Doctor Self-Update with Invalid Department [PASS] Rejected with HTTP 400 Bad Request")
+
+        # D-13: Patient prohibited from setting doctor department via PUT /profile/department (HTTP 403)
+        res_pat_dept = client.put(
+            "/profile/department",
+            json={"department": "Cardiology (Heart)"},
+            headers=h_pat1
+        )
+        assert res_pat_dept.status_code == 403
+        print("D-13. Patient Department Update Forbidden [PASS] Blocked with HTTP 403")
+
+        # D-14: Cross-user doctor department update prohibited (HTTP 403 IDOR protection)
+        res_cross_dept = client.put(
+            "/profile/ADM-1001/department",
+            json={"department": "Orthopedics (Bones & Joints)"},
+            headers=h_doc1
+        )
+        assert res_cross_dept.status_code == 403
+        print("D-14. Cross-User Department Update IDOR Guard [PASS] Blocked with HTTP 403")
+
+        # D-15: Admin reassigns doctor department via PATCH /auth/staff/{user_id}/department with audit log
+        res_admin_reassign = client.patch(
+            "/auth/staff/DOC-1001/department",
+            json={"department": "Neurology (Brain & Nervous System)"},
+            headers=h_adm1
+        )
+        assert res_admin_reassign.status_code == 200, res_admin_reassign.text
+        assert res_admin_reassign.json()["department"] == "Neurology (Brain & Nervous System)"
+        print("D-15. Admin Reassigns Doctor Department [PASS] Successfully reassigned to Neurology with audit log")
+
+        # D-16: Appointment slot filtering by department
+        res_filter_slots = client.get(
+            "/appointments/doctors?department=Neurology (Brain & Nervous System)",
+            headers=h_pat1
+        )
+        assert res_filter_slots.status_code == 200, res_filter_slots.text
+        neuro_docs = res_filter_slots.json()
+        assert any(d["doctor_id"] == "DOC-1001" for d in neuro_docs), "Expected DOC-1001 in filtered slots"
+        print("D-16. Appointment Slots Filtered by Department [PASS] Doctor slots correctly matched department")
+
+        print("=" * 78)
+        print("ALL 100 VERIFICATION & REGRESSION CHECKS PASSED WITH ZERO ERRORS!")
         print("=" * 78)
 
         db.close()

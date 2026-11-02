@@ -15,6 +15,7 @@ class User(Base):
     patient_id = Column(String(50), nullable=True, index=True)   # Linked patient profile ID (e.g. P-1001)
     profile_photo = Column(String(255), nullable=True, default=None)  # Secure relative path/URL to profile photo
     preferred_language = Column(String(20), default="en", nullable=False)  # ISO/Eighth Schedule code (en, hi, bn, etc.)
+    department = Column(String(100), nullable=True, default="General Medicine (Internal Medicine)")  # Hospital clinical department
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
